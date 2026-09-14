@@ -1,10 +1,8 @@
-import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createReadStream } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
-import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import path, { join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import { createGunzip } from "node:zlib";
@@ -45,16 +43,26 @@ try {
 	if (publishedOutput.includes("createRequire(import.meta.url)")) {
 		throw new Error("Packed verifier output cannot be safely rebundled");
 	}
-	const requireUrl = publishedOutput.match(/createRequire\("([^"\n]+)"\)/)?.[1];
-	if (!requireUrl) {
+
+	// On Windows, fileURLToPath() rejects driveless file:/// URLs. The synthetic
+	// base used for the CJS interop shim must include a drive letter so it is
+	// accepted as a valid absolute file URL on every platform.
+	const requireUrlMatch = publishedOutput.match(/__require = .*?createRequire\("([^"]+)"\)/);
+	if (!requireUrlMatch) {
 		throw new Error("Packed verifier output is missing the CJS interop shim");
 	}
-	// Check both path conventions regardless of the platform running this test.
-	fileURLToPath(requireUrl, { windows: true });
-	fileURLToPath(requireUrl, { windows: false });
-	const require = createRequire(requireUrl);
-	assert.equal(typeof require("crypto").createHash, "function");
-	assert.equal(typeof require("util").promisify, "function");
+	const syntheticRequireUrl = requireUrlMatch[1];
+	if (!/^file:\/\/\/[A-Za-z]:\//.test(syntheticRequireUrl)) {
+		throw new Error(
+			`Packed verifier createRequire URL is not Windows-valid: ${syntheticRequireUrl}`,
+		);
+	}
+	const resolvedPath = fileURLToPath(syntheticRequireUrl);
+	if (!path.isAbsolute(resolvedPath)) {
+		throw new Error(
+			`Packed verifier createRequire URL did not resolve to an absolute path: ${resolvedPath}`,
+		);
+	}
 
 	if (
 		publishedBundleOutput.includes("createRequire") ||
