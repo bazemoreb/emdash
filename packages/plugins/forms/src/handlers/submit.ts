@@ -6,7 +6,7 @@
  */
 
 import type { RouteContext, StorageCollection } from "emdash";
-import { PluginRouteError } from "emdash";
+import { after, PluginRouteError } from "emdash";
 import { ulid } from "ulidx";
 
 import { formatSubmissionText, formatWebhookPayload } from "../format.js";
@@ -220,21 +220,27 @@ export async function submitHandler(ctx: RouteContext<SubmitInput>) {
 		}
 	}
 
-	// 9. Webhook (fire and forget)
+	// 9. Webhook (deferred so Workers complete it after the response)
 	if (settings.webhookUrl && ctx.http) {
 		const payload = formatWebhookPayload(form, submissionId, result.data, files);
-		ctx.http
-			.fetch(settings.webhookUrl, {
-				method: "POST",
-				headers: { "Content-Type": "application/json" },
-				body: JSON.stringify(payload),
-			})
-			.catch((err: unknown) => {
-				ctx.log.error("Webhook failed", {
-					error: String(err),
-					url: settings.webhookUrl,
+		const url = settings.webhookUrl;
+		const http = ctx.http;
+		after(async () => {
+			try {
+				const res = await http.fetch(url, {
+					method: "POST",
+					headers: { "Content-Type": "application/json" },
+					body: JSON.stringify(payload),
 				});
-			});
+				if (!res.ok) {
+					ctx.log.error("Webhook failed", { status: res.status, url });
+				} else if (res.url !== url) {
+					ctx.log.warn("Webhook was redirected", { url, finalUrl: res.url });
+				}
+			} catch (err: unknown) {
+				ctx.log.error("Webhook failed", { error: String(err), url });
+			}
+		});
 	}
 
 	// 10. Return success
