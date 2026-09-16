@@ -1,3 +1,4 @@
+import { definePlugin } from "emdash";
 import type { PluginContext } from "emdash";
 import type { EmailDeliverEvent } from "emdash/plugin";
 import { describe, it, expect, vi } from "vitest";
@@ -37,6 +38,16 @@ describe("cloudflareEmail()", () => {
 		expect(descriptor.format).toBe("native");
 		expect(descriptor.options).toEqual({ from: "cms@mails.example.com" });
 		expect(descriptor.capabilities).toEqual(["hooks.email-transport:register"]);
+	});
+
+	it("can be wrapped with definePlugin() to produce a ResolvedPlugin (#2311)", () => {
+		// The documented composition pattern: a local plugin re-exports a
+		// first-party provider through definePlugin() so Astro's `plugins: []`
+		// receives a bundlable entrypoint. This must typecheck and run.
+		const plugin = definePlugin(cloudflareEmail({ from: "cms@mails.example.com" }));
+		expect(plugin.id).toBe("cloudflare-email");
+		expect(plugin.version).toBe("1.0.0");
+		expect(plugin.capabilities).toEqual(["hooks.email-transport:register"]);
 	});
 
 	it("rejects a missing or invalid from address", () => {

@@ -4,15 +4,14 @@ import { join } from "node:path";
 
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
-import type { PluginDescriptor } from "../../../src/astro/integration/runtime.js";
+import type { SandboxedPluginDescriptor } from "../../../src/astro/integration/runtime.js";
 import { generateSandboxedPluginsModule } from "../../../src/astro/integration/virtual-modules.js";
 
-function descriptor(overrides: Partial<PluginDescriptor> = {}): PluginDescriptor {
+function descriptor(overrides: Partial<SandboxedPluginDescriptor> = {}): SandboxedPluginDescriptor {
 	return {
 		id: "test-plugin",
 		version: "1.0.0",
 		entrypoint: "@test/plugin/sandbox",
-		format: "standard",
 		capabilities: [],
 		allowedHosts: [],
 		storage: {},

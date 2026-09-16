@@ -147,9 +147,9 @@ declare module "virtual:emdash/sandbox-runner" {
 }
 
 declare module "virtual:emdash/sandboxed-plugins" {
-	import type { PluginDescriptor } from "./astro/integration/runtime.js";
+	import type { SandboxedPluginDescriptor } from "./astro/integration/runtime.js";
 
-	export const sandboxedPlugins: PluginDescriptor[];
+	export const sandboxedPlugins: SandboxedPluginDescriptor[];
 }
 
 declare module "virtual:emdash/block-components" {

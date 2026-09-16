@@ -16,7 +16,9 @@ import type { MediaProviderDescriptor } from "../../media/types.js";
 import type { ObjectCacheDescriptor } from "../../object-cache/types.js";
 import type {
 	FieldWidgetConfig,
+	PluginDefinition,
 	PluginMcpManifestConfig,
+	PluginStorageConfig,
 	PortableTextBlockConfig,
 	ResolvedPlugin,
 	SettingField,
@@ -68,18 +70,21 @@ export interface PluginDashboardWidget {
  * ```
  */
 /**
- * Storage collection declaration for sandboxed plugins
+ * Storage collection declaration for sandboxed plugins.
+ *
+ * Looser than `PluginStorageConfig` because bundled sandboxed plugins may
+ * omit `indexes`; the sandbox runtime fills in the default empty array.
  */
 export interface StorageCollectionDeclaration {
 	indexes?: string[];
 	uniqueIndexes?: string[];
 }
 
-export interface PluginDescriptor<TOptions = Record<string, unknown>> {
-	/** Unique plugin identifier */
-	id: string;
-	/** Plugin version (semver) */
-	version: string;
+/**
+ * Base metadata shared between trusted plugin descriptors and sandboxed
+ * plugin descriptors. Declares identity, entrypoint, and admin surface.
+ */
+interface PluginDescriptorBase<TOptions = Record<string, unknown>> {
 	/** Module specifier to import (e.g., "@emdash-cms/plugin-api-test") */
 	entrypoint: string;
 	/**
@@ -119,9 +124,30 @@ export interface PluginDescriptor<TOptions = Record<string, unknown>> {
 	portableTextBlocks?: PortableTextBlockConfig[];
 	/** Field widget types this plugin contributes for schema-field editing UIs. */
 	fieldWidgets?: FieldWidgetConfig[];
+}
 
-	// === Sandbox-specific fields (for sandboxed plugins) ===
+/**
+ * Plugin descriptor — returned by plugin factory functions for the
+ * integration's `plugins: []` array.
+ *
+ * Aligned with {@link PluginDefinition} so a first-party factory descriptor
+ * such as the one returned by `cloudflareEmail()` can be passed straight to
+ * `definePlugin()` when a site needs to wrap it with an entrypoint.
+ */
+export interface PluginDescriptor<TOptions = Record<string, unknown>>
+	extends PluginDefinition<PluginStorageConfig>, PluginDescriptorBase<TOptions> {}
 
+/**
+ * Sandboxed plugin descriptor — for `sandboxed: []` entries.
+ *
+ * Shares the same base metadata as {@link PluginDescriptor}, but carries
+ * manifest-style declarations because sandboxed plugins are bundled
+ * separately. Their hooks, routes, and MCP surface travel as serialisable
+ * arrays rather than runtime handler records.
+ */
+export interface SandboxedPluginDescriptor<
+	TOptions = Record<string, unknown>,
+> extends PluginDescriptorBase<TOptions> {
 	/**
 	 * Capabilities the plugin requests.
 	 * For standard-format plugins, capabilities are enforced in both trusted and
@@ -129,12 +155,12 @@ export interface PluginDescriptor<TOptions = Record<string, unknown>> {
 	 */
 	capabilities?: string[];
 	/**
-	 * Allowed hosts for network:fetch capability
-	 * Supports wildcards like "*.example.com"
+	 * Allowed hosts for network:request capability.
+	 * Supports wildcards like "*.example.com".
 	 */
 	allowedHosts?: string[];
 	/**
-	 * Storage collections the plugin declares
+	 * Storage collections the plugin declares.
 	 * Sandboxed plugins can only access declared collections.
 	 */
 	storage?: Record<string, StorageCollectionDeclaration>;
@@ -152,15 +178,6 @@ export interface PluginDescriptor<TOptions = Record<string, unknown>> {
 	 */
 	hooks?: Array<ManifestHookEntry | string>;
 }
-
-/**
- * Sandboxed plugin descriptor - same format as PluginDescriptor
- *
- * These run in isolated V8 isolates via Worker Loader on Cloudflare.
- * The `entrypoint` is resolved to a file and bundled at build time.
- */
-export type SandboxedPluginDescriptor<TOptions = Record<string, unknown>> =
-	PluginDescriptor<TOptions>;
 
 export interface EmDashConfig {
 	/**

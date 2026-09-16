@@ -13,7 +13,7 @@ import { resolve } from "node:path";
 import type { AuthProviderDescriptor } from "../../auth/types.js";
 import type { MediaProviderDescriptor } from "../../media/types.js";
 import { defaultSeed } from "../../seed/default.js";
-import type { PluginDescriptor } from "./runtime.js";
+import type { PluginDescriptor, SandboxedPluginDescriptor } from "./runtime.js";
 
 const TS_SOURCE_EXT_RE = /^\.(ts|tsx|mts|cts|jsx)$/;
 
@@ -324,7 +324,9 @@ export const plugins = [
  * Generates the admin registry module.
  * Uses adminEntry from plugin descriptors to statically import admin modules.
  */
-export function generateAdminRegistryModule(descriptors: PluginDescriptor[]): string {
+export function generateAdminRegistryModule(
+	descriptors: Array<PluginDescriptor | SandboxedPluginDescriptor>,
+): string {
 	// Filter to descriptors with admin entries
 	const adminDescriptors = descriptors.filter((d) => d.adminEntry);
 
@@ -454,7 +456,9 @@ export const mediaProviders = [
  * Generates the block components module.
  * Collects and merges `blockComponents` exports from plugin component entries.
  */
-export function generateBlockComponentsModule(descriptors: PluginDescriptor[]): string {
+export function generateBlockComponentsModule(
+	descriptors: Array<PluginDescriptor | SandboxedPluginDescriptor>,
+): string {
 	const withComponents = descriptors.filter((d) => d.componentsEntry);
 	if (withComponents.length === 0) {
 		return `export const pluginBlockComponents = {};`;
@@ -655,7 +659,7 @@ function resolveModulePathFromProject(specifier: string, projectRoot: string): s
  * At runtime, middleware uses SandboxRunner to load these into isolates.
  */
 export function generateSandboxedPluginsModule(
-	sandboxed: PluginDescriptor[],
+	sandboxed: SandboxedPluginDescriptor[],
 	projectRoot: string,
 	onEntryResolved?: (filePath: string) => void,
 ): string {

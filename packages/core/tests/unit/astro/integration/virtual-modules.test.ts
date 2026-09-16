@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 import type { Plugin } from "vite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { PluginDescriptor } from "../../../../src/astro/integration/runtime.js";
+import type { SandboxedPluginDescriptor } from "../../../../src/astro/integration/runtime.js";
 import {
 	generateConfigModule,
 	generateDialectModule,
@@ -220,11 +220,10 @@ describe("createVirtualModulesPlugin scheduler wiring", () => {
 				}),
 			);
 
-			const descriptor: PluginDescriptor = {
+			const descriptor: SandboxedPluginDescriptor = {
 				id: "watch-plugin",
 				version: "1.0.0",
 				entrypoint: "@test/watch-plugin/sandbox",
-				format: "standard",
 				capabilities: [],
 				allowedHosts: [],
 				storage: {},

@@ -371,8 +371,8 @@ export {
 } from "./plugins/index.js";
 export type { CurrentPluginCapability, DeprecatedPluginCapability } from "./plugins/index.js";
 
-// Plugin descriptor (for astro.config.mjs)
-export type { PluginDescriptor } from "./astro/integration/runtime.js";
+// Plugin descriptors (for astro.config.mjs)
+export type { PluginDescriptor, SandboxedPluginDescriptor } from "./astro/integration/runtime.js";
 
 // Schema registry
 export { SchemaRegistry, SchemaError, getCollectionInfo } from "./schema/index.js";
