@@ -126,7 +126,7 @@ describe("EmDashImage dark variant", () => {
 		expect(attr(darkTag!, "class")).toContain("emdash-image--dark");
 	});
 
-	test("same-origin local media renders both variants through the Astro image pipeline", async () => {
+	test("same-origin local media renders both variants without a degenerate srcset under passthrough", async () => {
 		const html = await render({
 			image: {
 				id: "01LOCALLIGHT",
@@ -144,10 +144,13 @@ describe("EmDashImage dark variant", () => {
 		const [lightTag, darkTag] = imgTags(html);
 
 		expect(imgTags(html)).toHaveLength(2);
-		expect(attr(lightTag!, "data-astro-image")).toBe("constrained");
+		expect(attr(lightTag!, "src")).toContain("01LOCALLIGHT.png");
+		expect(lightTag!).not.toContain("data-astro-image");
+		expect(lightTag!).not.toContain("srcset=");
 		expect(attr(lightTag!, "class")).toContain("emdash-image--light");
-		expect(attr(darkTag!, "data-astro-image")).toBe("constrained");
 		expect(attr(darkTag!, "src")).toContain("01LOCALDARK.png");
+		expect(darkTag!).not.toContain("data-astro-image");
+		expect(darkTag!).not.toContain("srcset=");
 		expect(attr(darkTag!, "class")).toContain("emdash-image--dark");
 	});
 });

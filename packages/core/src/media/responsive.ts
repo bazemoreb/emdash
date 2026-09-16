@@ -95,6 +95,30 @@ export type GetImage = (options: {
 	sizes?: string;
 }) => Promise<{ src: string; srcSet?: { attribute?: string } | undefined }>;
 
+/**
+ * Probe Astro's configured image service with a single size to learn whether
+ * it actually transforms the source URL.
+ *
+ * Services that pass the URL through unchanged (Cloudflare without an Images
+ * binding, unconfigured sharp, etc.) return the same `src` they were given.
+ * Components use this as a guard before asking `<AstroImage>` to generate a
+ * srcset, so the markup never advertises ten identical URLs.
+ */
+export async function imageServiceTransformsUrl(
+	getImage: GetImage,
+	src: string,
+	width: number,
+	height: number,
+): Promise<boolean> {
+	if (!src || !width || !height || !ABSOLUTE_HTTP_URL.test(src)) return false;
+	try {
+		const result = await getImage({ src, width, height });
+		return Boolean(result.src && result.src !== src);
+	} catch {
+		return false;
+	}
+}
+
 export interface ResponsiveImage {
 	src: string;
 	srcset?: string;

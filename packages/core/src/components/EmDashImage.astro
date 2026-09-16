@@ -30,6 +30,7 @@ import { buildRenderMediaUrl } from "../media/url.js";
 import {
 	buildResponsiveImage,
 	toAbsoluteMediaUrl,
+	imageServiceTransformsUrl,
 	RESPONSIVE_BREAKPOINTS,
 } from "../media/responsive.js";
 import { getPublicOrigin } from "../api/public-url.js";
@@ -141,7 +142,9 @@ async function resolveImage(img: MediaValue): Promise<ResolvedImage> {
 		const publicOrigin = getPublicOrigin(Astro.url, Astro.locals.emdash?.config);
 		const absoluteSrc = toAbsoluteMediaUrl(src, publicOrigin);
 		if (finalWidth && finalHeight && absoluteSrc.startsWith(`${publicOrigin}/`)) {
-			astroImageSrc = absoluteSrc;
+			if (await imageServiceTransformsUrl(getImage, absoluteSrc, finalWidth, finalHeight)) {
+				astroImageSrc = absoluteSrc;
+			}
 		} else {
 			const optimized = await buildResponsiveImage(getImage, {
 				src: absoluteSrc,

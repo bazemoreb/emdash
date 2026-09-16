@@ -80,6 +80,14 @@ async function renderEmDashMedia(props: Record<string, unknown>) {
 	return c.renderToString(EmDashMedia, { props, locals });
 }
 
+async function createPassthroughContainer() {
+	return AstroContainer.create({
+		astroConfig: {
+			image: { service: { entrypoint: "astro/assets/services/noop" } },
+		},
+	});
+}
+
 describe("faithful render of migrated image node", () => {
 	test("default type.image=Image.astro", async () => {
 		const c = await AstroContainer.create();
@@ -127,10 +135,12 @@ describe("faithful render of migrated image node", () => {
 		expect(attr(tag, "alt")).toBe("Migrated image");
 		expect(attr(tag, "width")).toBe("600");
 		expect(attr(tag, "height")).toBe("400");
+		// In a passthrough environment the markup must fall back to a plain
+		// <img> instead of emitting a degenerate srcset of identical URLs.
 		expect(attr(tag, "loading")).toBe("lazy");
 		expect(attr(tag, "decoding")).toBe("async");
-		expect(attr(tag, "data-astro-image")).toBe("constrained");
-		expect(attr(tag, "srcset")).toBeTruthy();
+		expect(tag).not.toContain("data-astro-image");
+		expect(attr(tag, "srcset")).toBeUndefined();
 		expect(html).toContain("<figcaption");
 		expect(html).toContain("A caption");
 	});
@@ -272,7 +282,7 @@ describe("faithful render of migrated image node", () => {
 		expect(attr(imgTag(mediaHtml), "src")).toBe(expectedSrc);
 	});
 
-	test("public EmDashImage uses Astro Image for same-origin local media", async () => {
+	test("public EmDashImage does not emit a degenerate srcset for same-origin local media under passthrough", async () => {
 		const html = await renderEmDashImage({
 			image: {
 				id: "01CUSTOM",
@@ -285,10 +295,56 @@ describe("faithful render of migrated image node", () => {
 		const tag = imgTag(html);
 
 		expect(attr(tag, "src")).toContain("/media/custom.jpg");
-		expect(attr(tag, "data-astro-image")).toBe("constrained");
-		expect(attr(tag, "srcset")).toBeTruthy();
+		expect(tag).not.toContain("data-astro-image");
+		expect(attr(tag, "srcset")).toBeUndefined();
 		expect(attr(tag, "loading")).toBe("lazy");
 		expect(attr(tag, "decoding")).toBe("async");
+	});
+
+	test("passthrough image service does not emit a degenerate srcset in EmDashImage", async () => {
+		const c = await createPassthroughContainer();
+		const html = await c.renderToString(EmDashImage, {
+			props: {
+				image: {
+					id: "01MEDIA",
+					src: "/_emdash/api/media/file/01MEDIA.jpg",
+					alt: "Stored media",
+					width: 800,
+					height: 600,
+				},
+			},
+			locals,
+		});
+		const tag = imgTag(html);
+
+		expect(attr(tag, "src")).toContain("/_emdash/api/media/file/01MEDIA.jpg");
+		expect(tag).not.toContain("srcset=");
+		expect(tag).not.toContain("data-astro-image");
+		expect(attr(tag, "width")).toBe("800");
+		expect(attr(tag, "height")).toBe("600");
+	});
+
+	test("passthrough image service does not emit a degenerate srcset in Portable Text Image", async () => {
+		const c = await createPassthroughContainer();
+		const html = await c.renderToString(Image, {
+			props: {
+				node: {
+					...node,
+					width: 1200,
+					height: 800,
+					displayWidth: 600,
+					displayHeight: undefined,
+				},
+			},
+			locals,
+		});
+		const tag = imgTag(html);
+
+		expect(attr(tag, "src")).toContain("/_emdash/api/media/file/01KTRTJ55S65SADEH9P9TSY89H.png");
+		expect(tag).not.toContain("srcset=");
+		expect(tag).not.toContain("data-astro-image");
+		expect(attr(tag, "width")).toBe("600");
+		expect(attr(tag, "height")).toBe("400");
 	});
 
 	test("public EmDashImage preserves priority and passthrough attrs", async () => {
@@ -307,9 +363,11 @@ describe("faithful render of migrated image node", () => {
 		const tag = imgTag(html);
 
 		expect(attr(tag, "src")).toContain("/_emdash/api/media/file/01MEDIA.jpg");
+		expect(tag).not.toContain("srcset=");
+		expect(tag).not.toContain("data-astro-image");
 		expect(attr(tag, "loading")).toBe("eager");
 		expect(attr(tag, "fetchpriority")).toBe("high");
-		expect(attr(tag, "class")).toBe("hero-image");
+		expect(attr(tag, "class")).toContain("hero-image");
 		expect(attr(tag, "data-testid")).toBe("hero");
 	});
 });

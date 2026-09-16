@@ -4,6 +4,7 @@ import {
 	RESPONSIVE_BREAKPOINTS,
 	buildResponsiveImage,
 	gallerySizes,
+	imageServiceTransformsUrl,
 	responsiveSizes,
 	responsiveWidths,
 	toAbsoluteMediaUrl,
@@ -172,5 +173,34 @@ describe("toAbsoluteMediaUrl", () => {
 		// "/\\evil.com" would otherwise resolve to https://evil.com.
 		expect(toAbsoluteMediaUrl("/\\evil.com/x.jpg", ORIGIN)).toBe("/\\evil.com/x.jpg");
 		expect(toAbsoluteMediaUrl("/\\/evil.com/x.jpg", ORIGIN)).toBe("/\\/evil.com/x.jpg");
+	});
+});
+
+describe("imageServiceTransformsUrl", () => {
+	const SRC = "https://cdn.example.com/a.jpg";
+
+	it("returns false for relative URLs", async () => {
+		const getImage = vi.fn();
+		expect(await imageServiceTransformsUrl(getImage, "/local.jpg", 800, 600)).toBe(false);
+		expect(getImage).not.toHaveBeenCalled();
+	});
+
+	it("returns false when getImage throws", async () => {
+		const getImage: GetImage = async () => {
+			throw new Error("no service");
+		};
+		expect(await imageServiceTransformsUrl(getImage, SRC, 800, 600)).toBe(false);
+	});
+
+	it("returns false when the service passes the URL through unchanged", async () => {
+		const getImage: GetImage = async (opts) => ({ src: opts.src });
+		expect(await imageServiceTransformsUrl(getImage, SRC, 800, 600)).toBe(false);
+	});
+
+	it("returns true when the service rewrites the URL", async () => {
+		const getImage: GetImage = async (opts) => ({
+			src: `/_image?href=${encodeURIComponent(opts.src)}&w=${opts.width}`,
+		});
+		expect(await imageServiceTransformsUrl(getImage, SRC, 800, 600)).toBe(true);
 	});
 });
