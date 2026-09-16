@@ -14,7 +14,7 @@
  */
 
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, expect, it } from "vitest";
 
 import {
 	MAX_404_LOG_ROWS,
@@ -23,11 +23,16 @@ import {
 	USER_AGENT_MAX_LENGTH,
 } from "../../../src/database/repositories/redirect.js";
 import type { Database } from "../../../src/database/types.js";
-import { setupTestDatabase, teardownTestDatabase } from "../../utils/test-db.js";
+import {
+	describeEachDialect,
+	setupForDialect,
+	teardownForDialect,
+	type DialectTestContext,
+} from "../../utils/test-db.js";
 
 /**
  * Seed `_emdash_404_log` directly to MAX_404_LOG_ROWS, batching to stay
- * under SQLite's per-statement bind-parameter limit (~32k by default).
+ * under per-statement bind-parameter limits on both SQLite and Postgres.
  *
  * Rows are staggered in `last_seen_at` so `seed-000000` is the oldest.
  */
@@ -54,17 +59,17 @@ async function seedToCapacity(db: Kysely<Database>): Promise<void> {
 	}
 }
 
-describe("RedirectRepository.log404 — bounded logging", () => {
-	let db: Kysely<Database>;
+describeEachDialect("RedirectRepository.log404 — bounded logging", (dialect) => {
+	let ctx: DialectTestContext;
 	let repo: RedirectRepository;
 
 	beforeEach(async () => {
-		db = await setupTestDatabase();
-		repo = new RedirectRepository(db);
+		ctx = await setupForDialect(dialect);
+		repo = new RedirectRepository(ctx.db);
 	});
 
 	afterEach(async () => {
-		await teardownTestDatabase(db);
+		await teardownForDialect(ctx);
 	});
 
 	it("dedups repeat hits by path instead of inserting new rows", async () => {
@@ -72,7 +77,7 @@ describe("RedirectRepository.log404 — bounded logging", () => {
 		await repo.log404({ path: "/missing" });
 		await repo.log404({ path: "/missing" });
 
-		const rows = await db
+		const rows = await ctx.db
 			.selectFrom("_emdash_404_log")
 			.selectAll()
 			.where("path", "=", "/missing")
@@ -93,7 +98,7 @@ describe("RedirectRepository.log404 — bounded logging", () => {
 			userAgent: bigUserAgent,
 		});
 
-		const row = await db
+		const row = await ctx.db
 			.selectFrom("_emdash_404_log")
 			.selectAll()
 			.where("path", "=", "/missing")
@@ -109,7 +114,7 @@ describe("RedirectRepository.log404 — bounded logging", () => {
 	it("preserves null referrer / user_agent without coercing to empty string", async () => {
 		await repo.log404({ path: "/missing", referrer: null, userAgent: null });
 
-		const row = await db
+		const row = await ctx.db
 			.selectFrom("_emdash_404_log")
 			.selectAll()
 			.where("path", "=", "/missing")
@@ -123,10 +128,10 @@ describe("RedirectRepository.log404 — bounded logging", () => {
 		// Stuffing the table to MAX_404_LOG_ROWS via the public API would be
 		// slow, so seed it directly. Batch the inserts to stay under SQLite's
 		// per-statement parameter limit.
-		await seedToCapacity(db);
+		await seedToCapacity(ctx.db);
 
 		// Sanity: at capacity.
-		const before = await db
+		const before = await ctx.db
 			.selectFrom("_emdash_404_log")
 			.select((eb) => eb.fn.countAll<number>().as("c"))
 			.executeTakeFirstOrThrow();
@@ -135,14 +140,14 @@ describe("RedirectRepository.log404 — bounded logging", () => {
 		// New unique path triggers eviction.
 		await repo.log404({ path: "/brand-new" });
 
-		const after = await db
+		const after = await ctx.db
 			.selectFrom("_emdash_404_log")
 			.select((eb) => eb.fn.countAll<number>().as("c"))
 			.executeTakeFirstOrThrow();
 		expect(Number(after.c)).toBe(MAX_404_LOG_ROWS);
 
 		// The oldest seed row is gone.
-		const oldest = await db
+		const oldest = await ctx.db
 			.selectFrom("_emdash_404_log")
 			.select("id")
 			.where("id", "=", "seed-000000")
@@ -150,7 +155,7 @@ describe("RedirectRepository.log404 — bounded logging", () => {
 		expect(oldest).toBeUndefined();
 
 		// The new path is present.
-		const fresh = await db
+		const fresh = await ctx.db
 			.selectFrom("_emdash_404_log")
 			.select("path")
 			.where("path", "=", "/brand-new")
@@ -159,19 +164,19 @@ describe("RedirectRepository.log404 — bounded logging", () => {
 	});
 
 	it("does not evict when an existing path is hit again, even at capacity", async () => {
-		await seedToCapacity(db);
+		await seedToCapacity(ctx.db);
 
 		// Hit an existing path — should bump hits, not evict.
 		await repo.log404({ path: "/seed-500" });
 
-		const oldest = await db
+		const oldest = await ctx.db
 			.selectFrom("_emdash_404_log")
 			.select("id")
 			.where("id", "=", "seed-000000")
 			.executeTakeFirst();
 		expect(oldest?.id).toBe("seed-000000");
 
-		const bumped = await db
+		const bumped = await ctx.db
 			.selectFrom("_emdash_404_log")
 			.select(["hits"])
 			.where("path", "=", "/seed-500")
@@ -198,7 +203,7 @@ describe("RedirectRepository.log404 — bounded logging", () => {
 		}
 		await Promise.all(pending);
 
-		const rows = await db
+		const rows = await ctx.db
 			.selectFrom("_emdash_404_log")
 			.selectAll()
 			.where("path", "=", "/race")

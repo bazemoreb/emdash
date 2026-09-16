@@ -467,7 +467,7 @@ export class RedirectRepository {
 			})
 			.onConflict((oc) =>
 				oc.column("path").doUpdateSet({
-					hits: sql`hits + 1`,
+					hits: sql`${sql.ref("_emdash_404_log")}.${sql.ref("hits")} + 1`,
 					last_seen_at: now,
 					referrer,
 					user_agent: userAgent,
