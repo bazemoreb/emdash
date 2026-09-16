@@ -1,5 +1,42 @@
 # @emdash-cms/admin
 
+## 0.39.0
+
+### Minor Changes
+
+- [#3145](https://github.com/emdash-cms/emdash/pull/3145) [`f6bf82f`](https://github.com/emdash-cms/emdash/commit/f6bf82fe23a783ac9932f4a913b6873349222899) Thanks [@ascorbic](https://github.com/ascorbic)! - Updates plugin discovery to show only the registry. Sites with an enabled `sandboxRunner` use the hosted aggregator at `https://registry.emdashcms.com` by default. The new top-level `registry` option accepts a registry URL or configuration object, while `registry: false` disables registry discovery and registry-installed plugins without disabling the sandbox runner.
+  
+  The former `experimental.registry` location is deprecated but remains supported when the top-level option is omitted. A top-level value takes precedence.
+  
+  The `marketplace` integration option is deprecated but remains supported for plugins already installed from Marketplace. Those plugins continue to run and can still be updated or uninstalled from **Plugins**. Marketplace browse and install pages are hidden, and configured sites display a migration guide banner.
+  
+  #### What should I do?
+  
+  Move an existing `experimental.registry` value to the top-level `registry` option. The deprecated location continues to work during the pre-1.0 compatibility period.
+  
+  Set `registry: false` if the site needs its sandbox runner but should not load registry-installed plugins or expose registry discovery.
+  
+  Keep `marketplace` configured while any installed Marketplace plugin still needs updates. Replace or uninstall those plugins, then remove the option by following the [Marketplace migration guide](https://docs.emdashcms.com/plugins/migrate-from-marketplace/).
+
+- [#2880](https://github.com/emdash-cms/emdash/pull/2880) [`ad1dee2`](https://github.com/emdash-cms/emdash/commit/ad1dee288aedda3242a2f456708b53cd2e0b23cd) Thanks [@danielmlr](https://github.com/danielmlr)! - Adds the field constraints declared in a collection schema to the content editor, so authors see a limit before a save can fail on it.
+  
+  Text fields with `maxLength` show a live character count below the input and stop accepting input at the limit; a `minLength` is shown as a hint. Number fields with `min` or `max` show the allowed range and set it on the input. Content that is outside its bounds, such as text saved before a limit was lowered, is marked in the editor before a save is attempted.
+  
+  The admin manifest now carries a field's `validation` object for every field type. Previously only repeater, file and image fields exposed it, so length and range rules never reached the editor. Plugin field widgets for trusted plugins receive the same `validation` object as a prop, so a custom widget can enforce the limits without hardcoding them.
+
+### Patch Changes
+
+- [#3146](https://github.com/emdash-cms/emdash/pull/3146) [`4ebd2a8`](https://github.com/emdash-cms/emdash/commit/4ebd2a8da46ae144714cef7b776aa6d790f92815) Thanks [@ascorbic](https://github.com/ascorbic)! - Fixes datetime sorting and range queries by storing every content datetime as a UTC ISO string with fixed milliseconds. The admin converts date-and-time fields through the site's configured timezone, while API, MCP, and CLI writes now require `Z` or an explicit UTC offset.
+  
+  The core migration reports noncanonical values before changing them, then normalizes content columns and revision snapshots in bounded batches. Legacy values without an offset use the site timezone. If a value falls in a repeated or skipped daylight-saving hour, the migration stops before writing and reports the content row or revision that needs an explicit offset.
+
+- [#3125](https://github.com/emdash-cms/emdash/pull/3125) [`c783951`](https://github.com/emdash-cms/emdash/commit/c7839517c10562f6d422c838f3903c8c6085e737) Thanks [@emdashbot](https://github.com/apps/emdashbot)! - Fixes the content editor's distraction-free mode shortcut so `⌘⇧\` (or `Ctrl+Shift+\`) toggles the mode both in and out, keeps the exit button visible without hovering, and no longer treats `Escape` as an exit trigger.
+- Updated dependencies [[`71901fc`](https://github.com/emdash-cms/emdash/commit/71901fc92b5a09bd5c1321759b2db1aaa9b0e730), [`a823276`](https://github.com/emdash-cms/emdash/commit/a823276384cdd3fbf60f01fac5ffb22de6e73dba)]:
+  - @emdash-cms/registry-lexicons@0.5.1
+  - @emdash-cms/plugin-types@0.3.2
+  - @emdash-cms/registry-client@0.6.1
+  - @emdash-cms/blocks@0.39.0
+
 ## 0.38.0
 
 ### Minor Changes

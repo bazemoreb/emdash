@@ -1,5 +1,23 @@
 # @emdash-cms/cloudflare
 
+## 0.39.0
+
+### Patch Changes
+
+- [#3152](https://github.com/emdash-cms/emdash/pull/3152) [`a823276`](https://github.com/emdash-cms/emdash/commit/a823276384cdd3fbf60f01fac5ffb22de6e73dba) Thanks [@ascorbic](https://github.com/ascorbic)! - Fixes standard sandboxed plugins so lifecycle, content, media, comment, email, cron, and page metadata hooks run through the same ordered, capability-gated host pipeline as trusted plugins on Cloudflare Workers and Node.js.
+  
+  Sandbox contexts now expose canonical capabilities, database-backed `ctx.cron`, complete content metadata and filtering, and a real `Response` shape from `ctx.http.fetch()`. Cloudflare response bodies still cross the bridge as text. Admin-managed settings now share the `ctx.kv` settings namespace, lifecycle hooks run once at the correct install/enable boundary, and uninstall cleanup runs before plugin data or bundles are removed.
+  
+  Plugin builds also preserve hook, route permission and cache, MCP, settings, and field-widget metadata in registry bundles and npm descriptors.
+
+- [#3162](https://github.com/emdash-cms/emdash/pull/3162) [`a4af578`](https://github.com/emdash-cms/emdash/commit/a4af5781360edb83811b38347d6d9bd23a6fc498) Thanks [@ascorbic](https://github.com/ascorbic)! - Adds `createPluginRuntimeTestHost()` for sandboxed plugin tests that must exercise EmDash orchestration instead of invoking an isolate directly. The host separates direct transport calls, fixtures, production actions, observable-state inspectors, scheduled time control, cold restart, and disposal.
+  
+  Runtime actions cover the shipped content lifecycle, plugin activation and deactivation, media upload, public comment submission, comment moderation, plugin-route policy, and scheduled task execution. The controlled scheduler clock applies to cron tasks and scheduled publishing. `restart()` retains D1, plugin storage, media storage, and plugin state while replacing runtime and isolate memory. The host captures delivered email for assertions.
+  
+  `createPluginTestHost()` and its top-level `invokeHook()` and `invokeRoute()` methods remain compatible for fast transport-level tests. `emdashPluginTest()` supplies the runtime modules required by the documented Vitest configuration. Generated plugin projects continue to use Worker Loader by default and describe Node/workerd parity as an opt-in test for runner-sensitive behavior.
+- Updated dependencies [[`f6bf82f`](https://github.com/emdash-cms/emdash/commit/f6bf82fe23a783ac9932f4a913b6873349222899), [`4ebd2a8`](https://github.com/emdash-cms/emdash/commit/4ebd2a8da46ae144714cef7b776aa6d790f92815), [`ad1dee2`](https://github.com/emdash-cms/emdash/commit/ad1dee288aedda3242a2f456708b53cd2e0b23cd), [`e9c4433`](https://github.com/emdash-cms/emdash/commit/e9c44338794a5f35e016644d8db913bffe6b235d), [`e9c4433`](https://github.com/emdash-cms/emdash/commit/e9c44338794a5f35e016644d8db913bffe6b235d), [`222f329`](https://github.com/emdash-cms/emdash/commit/222f32936ad74e102c1b64d8017625ac913d17dc), [`71901fc`](https://github.com/emdash-cms/emdash/commit/71901fc92b5a09bd5c1321759b2db1aaa9b0e730), [`363dd56`](https://github.com/emdash-cms/emdash/commit/363dd56f2c9027b3c6237c7e5f3346181752cd9a), [`3533d2c`](https://github.com/emdash-cms/emdash/commit/3533d2cd7352bc66ed9b08d84233899b59d9aeaf), [`a823276`](https://github.com/emdash-cms/emdash/commit/a823276384cdd3fbf60f01fac5ffb22de6e73dba), [`b3433d1`](https://github.com/emdash-cms/emdash/commit/b3433d1e4a9269b16b1c6dfe5536820157ddd119), [`a4af578`](https://github.com/emdash-cms/emdash/commit/a4af5781360edb83811b38347d6d9bd23a6fc498), [`a4af578`](https://github.com/emdash-cms/emdash/commit/a4af5781360edb83811b38347d6d9bd23a6fc498)]:
+  - emdash@0.39.0
+
 ## 0.38.0
 
 ### Minor Changes

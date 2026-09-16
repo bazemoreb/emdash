@@ -1,5 +1,29 @@
 # @emdash-cms/registry-cli
 
+## 0.12.0
+
+### Minor Changes
+
+- [#3117](https://github.com/emdash-cms/emdash/pull/3117) [`54377c8`](https://github.com/emdash-cms/emdash/commit/54377c82fd223da68e29d958e2957cca24564583) Thanks [@ascorbic](https://github.com/ascorbic)! - Improves package-profile and release publishing output: commands use the `@handle/slug` registry identifier, link to the eventual public plugin page, and let `info --version <version> --watch` track effective label checks without exposing unapproved aggregator metadata. Missing manifests point to the plugin directory, GitHub repository prompts use a detected `origin` remote, setup failures omit stack traces, and a published profile shows both manual and GitHub Actions release commands.
+
+### Patch Changes
+
+- [#3152](https://github.com/emdash-cms/emdash/pull/3152) [`a823276`](https://github.com/emdash-cms/emdash/commit/a823276384cdd3fbf60f01fac5ffb22de6e73dba) Thanks [@ascorbic](https://github.com/ascorbic)! - Fixes standard sandboxed plugins so lifecycle, content, media, comment, email, cron, and page metadata hooks run through the same ordered, capability-gated host pipeline as trusted plugins on Cloudflare Workers and Node.js.
+  
+  Sandbox contexts now expose canonical capabilities, database-backed `ctx.cron`, complete content metadata and filtering, and a real `Response` shape from `ctx.http.fetch()`. Cloudflare response bodies still cross the bridge as text. Admin-managed settings now share the `ctx.kv` settings namespace, lifecycle hooks run once at the correct install/enable boundary, and uninstall cleanup runs before plugin data or bundles are removed.
+  
+  Plugin builds also preserve hook, route permission and cache, MCP, settings, and field-widget metadata in registry bundles and npm descriptors.
+
+- [#3162](https://github.com/emdash-cms/emdash/pull/3162) [`a4af578`](https://github.com/emdash-cms/emdash/commit/a4af5781360edb83811b38347d6d9bd23a6fc498) Thanks [@ascorbic](https://github.com/ascorbic)! - Adds `createPluginRuntimeTestHost()` for sandboxed plugin tests that must exercise EmDash orchestration instead of invoking an isolate directly. The host separates direct transport calls, fixtures, production actions, observable-state inspectors, scheduled time control, cold restart, and disposal.
+  
+  Runtime actions cover the shipped content lifecycle, plugin activation and deactivation, media upload, public comment submission, comment moderation, plugin-route policy, and scheduled task execution. The controlled scheduler clock applies to cron tasks and scheduled publishing. `restart()` retains D1, plugin storage, media storage, and plugin state while replacing runtime and isolate memory. The host captures delivered email for assertions.
+  
+  `createPluginTestHost()` and its top-level `invokeHook()` and `invokeRoute()` methods remain compatible for fast transport-level tests. `emdashPluginTest()` supplies the runtime modules required by the documented Vitest configuration. Generated plugin projects continue to use Worker Loader by default and describe Node/workerd parity as an opt-in test for runner-sensitive behavior.
+- Updated dependencies [[`71901fc`](https://github.com/emdash-cms/emdash/commit/71901fc92b5a09bd5c1321759b2db1aaa9b0e730), [`a823276`](https://github.com/emdash-cms/emdash/commit/a823276384cdd3fbf60f01fac5ffb22de6e73dba)]:
+  - @emdash-cms/registry-lexicons@0.5.1
+  - @emdash-cms/plugin-types@0.3.2
+  - @emdash-cms/registry-client@0.6.1
+
 ## 0.11.0
 
 ### Minor Changes

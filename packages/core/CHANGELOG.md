@@ -1,5 +1,81 @@
 # emdash
 
+## 0.39.0
+
+### Minor Changes
+
+- [#3145](https://github.com/emdash-cms/emdash/pull/3145) [`f6bf82f`](https://github.com/emdash-cms/emdash/commit/f6bf82fe23a783ac9932f4a913b6873349222899) Thanks [@ascorbic](https://github.com/ascorbic)! - Updates plugin discovery to show only the registry. Sites with an enabled `sandboxRunner` use the hosted aggregator at `https://registry.emdashcms.com` by default. The new top-level `registry` option accepts a registry URL or configuration object, while `registry: false` disables registry discovery and registry-installed plugins without disabling the sandbox runner.
+  
+  The former `experimental.registry` location is deprecated but remains supported when the top-level option is omitted. A top-level value takes precedence.
+  
+  The `marketplace` integration option is deprecated but remains supported for plugins already installed from Marketplace. Those plugins continue to run and can still be updated or uninstalled from **Plugins**. Marketplace browse and install pages are hidden, and configured sites display a migration guide banner.
+  
+  #### What should I do?
+  
+  Move an existing `experimental.registry` value to the top-level `registry` option. The deprecated location continues to work during the pre-1.0 compatibility period.
+  
+  Set `registry: false` if the site needs its sandbox runner but should not load registry-installed plugins or expose registry discovery.
+  
+  Keep `marketplace` configured while any installed Marketplace plugin still needs updates. Replace or uninstall those plugins, then remove the option by following the [Marketplace migration guide](https://docs.emdashcms.com/plugins/migrate-from-marketplace/).
+
+- [#2880](https://github.com/emdash-cms/emdash/pull/2880) [`ad1dee2`](https://github.com/emdash-cms/emdash/commit/ad1dee288aedda3242a2f456708b53cd2e0b23cd) Thanks [@danielmlr](https://github.com/danielmlr)! - Adds the field constraints declared in a collection schema to the content editor, so authors see a limit before a save can fail on it.
+  
+  Text fields with `maxLength` show a live character count below the input and stop accepting input at the limit; a `minLength` is shown as a hint. Number fields with `min` or `max` show the allowed range and set it on the input. Content that is outside its bounds, such as text saved before a limit was lowered, is marked in the editor before a save is attempted.
+  
+  The admin manifest now carries a field's `validation` object for every field type. Previously only repeater, file and image fields exposed it, so length and range rules never reached the editor. Plugin field widgets for trusted plugins receive the same `validation` object as a prop, so a custom widget can enforce the limits without hardcoding them.
+
+- [#3120](https://github.com/emdash-cms/emdash/pull/3120) [`71901fc`](https://github.com/emdash-cms/emdash/commit/71901fc92b5a09bd5c1321759b2db1aaa9b0e730) Thanks [@ascorbic](https://github.com/ascorbic)! - Adds `GET /_emdash/api/health` so external tools can confirm an EmDash site is reachable and whether its plugin registry is enabled. The anonymous response does not query the database and permits cross-origin reads.
+
+- [#3162](https://github.com/emdash-cms/emdash/pull/3162) [`a4af578`](https://github.com/emdash-cms/emdash/commit/a4af5781360edb83811b38347d6d9bd23a6fc498) Thanks [@ascorbic](https://github.com/ascorbic)! - Adds `createPluginRuntimeTestHost()` for sandboxed plugin tests that must exercise EmDash orchestration instead of invoking an isolate directly. The host separates direct transport calls, fixtures, production actions, observable-state inspectors, scheduled time control, cold restart, and disposal.
+  
+  Runtime actions cover the shipped content lifecycle, plugin activation and deactivation, media upload, public comment submission, comment moderation, plugin-route policy, and scheduled task execution. The controlled scheduler clock applies to cron tasks and scheduled publishing. `restart()` retains D1, plugin storage, media storage, and plugin state while replacing runtime and isolate memory. The host captures delivered email for assertions.
+  
+  `createPluginTestHost()` and its top-level `invokeHook()` and `invokeRoute()` methods remain compatible for fast transport-level tests. `emdashPluginTest()` supplies the runtime modules required by the documented Vitest configuration. Generated plugin projects continue to use Worker Loader by default and describe Node/workerd parity as an opt-in test for runner-sensitive behavior.
+
+### Patch Changes
+
+- [#3146](https://github.com/emdash-cms/emdash/pull/3146) [`4ebd2a8`](https://github.com/emdash-cms/emdash/commit/4ebd2a8da46ae144714cef7b776aa6d790f92815) Thanks [@ascorbic](https://github.com/ascorbic)! - Fixes datetime sorting and range queries by storing every content datetime as a UTC ISO string with fixed milliseconds. The admin converts date-and-time fields through the site's configured timezone, while API, MCP, and CLI writes now require `Z` or an explicit UTC offset.
+  
+  The core migration reports noncanonical values before changing them, then normalizes content columns and revision snapshots in bounded batches. Legacy values without an offset use the site timezone. If a value falls in a repeated or skipped daylight-saving hour, the migration stops before writing and reports the content row or revision that needs an explicit offset.
+
+- [#2776](https://github.com/emdash-cms/emdash/pull/2776) [`e9c4433`](https://github.com/emdash-cms/emdash/commit/e9c44338794a5f35e016644d8db913bffe6b235d) Thanks [@yet2come](https://github.com/yet2come)! - Fixes `emdash export-seed --with-content` so `reference` field values survive a round trip through `emdash seed`. The export now names a reference's target by the seed id it assigns that entry, and writes a referenced collection before the collection pointing at it. Previously the export emitted the source database's row id, which the restored database does not carry: the literal `$ref:<row-id>` string was stored in the column, the restore reported success, and the reference was lost wherever it was rendered.
+
+- [#2776](https://github.com/emdash-cms/emdash/pull/2776) [`e9c4433`](https://github.com/emdash-cms/emdash/commit/e9c44338794a5f35e016644d8db913bffe6b235d) Thanks [@yet2come](https://github.com/yet2come)! - Fixes `emdash export-seed` so its progress line goes to stderr and kysely's `orderBy` deprecation notice is no longer triggered, allowing `emdash export-seed > seed.json` to write a file that parses as JSON. Previously the redirected file began with `ℹ Database: …` and `orderBy(array) is deprecated…`, the command still exited `0` with an empty stderr, and the corruption surfaced only when `emdash seed` rejected the file at restore time.
+
+- [#3144](https://github.com/emdash-cms/emdash/pull/3144) [`222f329`](https://github.com/emdash-cms/emdash/commit/222f32936ad74e102c1b64d8017625ac913d17dc) Thanks [@ascorbic](https://github.com/ascorbic)! - Fixes `menu_set_items` creating replacement items without a translation group and repairs existing affected items, so seed exports retain each item's localization identity.
+
+- [#2779](https://github.com/emdash-cms/emdash/pull/2779) [`363dd56`](https://github.com/emdash-cms/emdash/commit/363dd56f2c9027b3c6237c7e5f3346181752cd9a) Thanks [@danielmlr](https://github.com/danielmlr)! - Fixes the image field type so a stored focal point is readable. `focalX` and `focalY` reach content entries but were missing from the generated collection types, so reading them from an image field was a type error. The dark-variant slot shares the media shape, so its focal point is readable on the same terms.
+
+- [#3127](https://github.com/emdash-cms/emdash/pull/3127) [`3533d2c`](https://github.com/emdash-cms/emdash/commit/3533d2cd7352bc66ed9b08d84233899b59d9aeaf) Thanks [@eisenbruch](https://github.com/eisenbruch)! - Fixes MCP write tools leaving cached pages stale on sites with Astro route caching enabled (for example `cacheCloudflare()`). A change made over MCP reached the database, but the cached page kept serving the old copy until its TTL expired. The tools now invalidate the same route-cache tags as the matching REST routes.
+  
+  #### Content tools
+  
+  `content_create`, `content_update`, `content_publish`, `content_unpublish`, `content_delete`, `content_restore`, `content_permanent_delete`, `content_schedule`, `content_unschedule`, `content_discard_draft` and `content_duplicate` invalidate the same tags as their REST routes.
+  
+  A `content_update` that only stages a draft invalidates nothing, as over REST. A `content_update` with a `status` still invalidates when its publish or unpublish step fails, if the update step already changed live content.
+  
+  #### Taxonomy, menu and settings tools
+  
+  `taxonomy_create`, `taxonomy_update`, `taxonomy_delete`, `taxonomy_create_term`, `taxonomy_update_term`, `taxonomy_delete_term`, `menu_create`, `menu_update`, `menu_delete`, `menu_set_items` and `settings_update` invalidate their taxonomy, menu or site-settings cache tags.
+
+- [#3152](https://github.com/emdash-cms/emdash/pull/3152) [`a823276`](https://github.com/emdash-cms/emdash/commit/a823276384cdd3fbf60f01fac5ffb22de6e73dba) Thanks [@ascorbic](https://github.com/ascorbic)! - Fixes standard sandboxed plugins so lifecycle, content, media, comment, email, cron, and page metadata hooks run through the same ordered, capability-gated host pipeline as trusted plugins on Cloudflare Workers and Node.js.
+  
+  Sandbox contexts now expose canonical capabilities, database-backed `ctx.cron`, complete content metadata and filtering, and a real `Response` shape from `ctx.http.fetch()`. Cloudflare response bodies still cross the bridge as text. Admin-managed settings now share the `ctx.kv` settings namespace, lifecycle hooks run once at the correct install/enable boundary, and uninstall cleanup runs before plugin data or bundles are removed.
+  
+  Plugin builds also preserve hook, route permission and cache, MCP, settings, and field-widget metadata in registry bundles and npm descriptors.
+
+- [#3128](https://github.com/emdash-cms/emdash/pull/3128) [`b3433d1`](https://github.com/emdash-cms/emdash/commit/b3433d1e4a9269b16b1c6dfe5536820157ddd119) Thanks [@eisenbruch](https://github.com/eisenbruch)! - Fixes pages failing with `TypeError: Cannot read properties of undefined (reading 'set')` when a preview link, an `_edit` link or a signed-in editor reaches a response Astro renders without a route-cache handle, such as the 404 page for a URL that matches no route. EmDash's middleware now skips the route-cache opt-out when there is no cache handle instead of throwing.
+
+- [#3162](https://github.com/emdash-cms/emdash/pull/3162) [`a4af578`](https://github.com/emdash-cms/emdash/commit/a4af5781360edb83811b38347d6d9bd23a6fc498) Thanks [@ascorbic](https://github.com/ascorbic)! - Fixes ISO date-time plugin schedules being treated as recurring tasks when the cron parser accepts the timestamp. A successful one-shot task is now removed after it runs.
+- Updated dependencies [[`71901fc`](https://github.com/emdash-cms/emdash/commit/71901fc92b5a09bd5c1321759b2db1aaa9b0e730), [`f6bf82f`](https://github.com/emdash-cms/emdash/commit/f6bf82fe23a783ac9932f4a913b6873349222899), [`4ebd2a8`](https://github.com/emdash-cms/emdash/commit/4ebd2a8da46ae144714cef7b776aa6d790f92815), [`ad1dee2`](https://github.com/emdash-cms/emdash/commit/ad1dee288aedda3242a2f456708b53cd2e0b23cd), [`a823276`](https://github.com/emdash-cms/emdash/commit/a823276384cdd3fbf60f01fac5ffb22de6e73dba), [`c783951`](https://github.com/emdash-cms/emdash/commit/c7839517c10562f6d422c838f3903c8c6085e737)]:
+  - @emdash-cms/registry-lexicons@0.5.1
+  - @emdash-cms/admin@0.39.0
+  - @emdash-cms/plugin-types@0.3.2
+  - @emdash-cms/registry-client@0.6.1
+  - @emdash-cms/registry-verification@0.3.2
+  - @emdash-cms/auth@0.39.0
+  - @emdash-cms/gutenberg-to-portable-text@0.39.0
+
 ## 0.38.0
 
 ### Minor Changes
