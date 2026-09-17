@@ -24,6 +24,7 @@ import {
 	dispatchPluginApiRequest,
 	EmDashRuntime,
 	getI18nConfig,
+	RedirectRepository,
 	setI18nConfig,
 	type UserInfo,
 } from "emdash/plugin-test-runtime";
@@ -438,44 +439,15 @@ export async function createPluginRuntimeTestHost(
 			},
 			async redirect(input) {
 				assertActive();
-				const id = crypto.randomUUID();
-				const now = new Date().toISOString();
-				const configRevision = crypto.randomUUID();
-				const redirect: RedirectInfo = {
-					id,
+				const redirect = await new RedirectRepository(runtime.db).create({
 					source: input.source,
 					destination: input.destination ?? "",
-					type: input.type ?? 301,
-					isPattern: input.source.includes("["),
-					enabled: input.enabled ?? true,
-					hits: 0,
-					lastHitAt: null,
-					groupName: input.groupName ?? null,
-					auto: input.auto ?? false,
-					createdAt: now,
-					updatedAt: now,
-				};
-				await runtime.db
-					.insertInto("_emdash_redirects")
-					.values({
-						id,
-						source: redirect.source,
-						destination: redirect.destination,
-						type: redirect.type,
-						is_pattern: redirect.isPattern ? 1 : 0,
-						enabled: redirect.enabled ? 1 : 0,
-						hits: 0,
-						last_hit_at: null,
-						group_name: redirect.groupName,
-						auto: redirect.auto ? 1 : 0,
-						config_revision: configRevision,
-						source_guard: 1,
-						write_generation: 0,
-						created_at: now,
-						updated_at: now,
-					})
-					.execute();
-				return redirect;
+					type: input.type,
+					enabled: input.enabled,
+					groupName: input.groupName,
+					auto: input.auto,
+				});
+				return { ...redirect, type: redirectStatus(redirect.type) };
 			},
 			plugin: {
 				setting: (key, value) => optionRepo.set(`plugin:${manifest.id}:settings:${key}`, value),

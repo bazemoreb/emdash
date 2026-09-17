@@ -184,6 +184,10 @@ export class RedirectRepository {
 		action: (fence: RedirectWriteFence, repository: RedirectRepository) => Promise<T>,
 	): Promise<T> {
 		if (isPostgres(this.db)) {
+			if (this.db.isTransaction) {
+				await sql`SELECT pg_advisory_xact_lock(${POSTGRES_REDIRECT_LOCK_KEY})`.execute(this.db);
+				return this.withLease(action);
+			}
 			return this.db.transaction().execute(async (transaction) => {
 				await sql`SELECT pg_advisory_xact_lock(${POSTGRES_REDIRECT_LOCK_KEY})`.execute(transaction);
 				const repository = new RedirectRepository(transaction);

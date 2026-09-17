@@ -151,6 +151,10 @@ describe("runtime plugin test host", () => {
 			destination: "/automatic-new",
 			auto: true,
 		});
+		await runtimeHost.fixtures.redirect({
+			source: "/old/[slug]",
+			destination: "/new/[slug]",
+		});
 		const request = async <T>(body: Record<string, unknown>): Promise<T> => {
 			const response = await runtimeHost!.actions.routes.request("redirects", {
 				user: admin,
@@ -228,7 +232,7 @@ describe("runtime plugin test host", () => {
 		});
 		expect(readAfterRestart.redirect.destination).toBe("/latest");
 
-		await expect(runtimeHost.inspect.redirects()).resolves.toHaveLength(3);
+		await expect(runtimeHost.inspect.redirects()).resolves.toHaveLength(4);
 		await expect(
 			request<{ deleted: boolean }>({
 				operation: "delete",
@@ -236,11 +240,12 @@ describe("runtime plugin test host", () => {
 				_rev: readAfterRestart._rev,
 			}),
 		).resolves.toEqual({ deleted: true });
-		await expect(runtimeHost.inspect.redirects()).resolves.toHaveLength(2);
+		await expect(runtimeHost.inspect.redirects()).resolves.toHaveLength(3);
 		await expect(runtimeHost.inspect.redirects()).resolves.toEqual(
 			expect.arrayContaining([
 				expect.objectContaining({ source: "/automatic-old", auto: true }),
 				expect.objectContaining({ source: "/concurrent", auto: false }),
+				expect.objectContaining({ source: "/old/[slug]", isPattern: true }),
 			]),
 		);
 	});
