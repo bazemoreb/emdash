@@ -31,7 +31,11 @@ import type { Storage } from "../storage/types.js";
 import { assertStorageKey } from "./conditional-storage.js";
 import { CronAccessImpl } from "./cron.js";
 import type { EmailPipeline } from "./email.js";
-import { createSettingsAccess } from "./settings.js";
+import {
+	createPluginSecretRedactor,
+	createSettingsAccess,
+	type PluginSecretRedactor,
+} from "./settings.js";
 import type {
 	ResolvedPlugin,
 	PluginContext,
@@ -908,39 +912,40 @@ export function createBlockedHttpAccess(pluginId: string): HttpAccess {
 /**
  * Create logger for a plugin
  */
-export function createLogAccess(pluginId: string): LogAccess {
+export function createLogAccess(pluginId: string, redactor?: PluginSecretRedactor): LogAccess {
 	const prefix = `[plugin:${pluginId}]`;
+	const redact = <T>(value: T): T => redactor?.redact(value) ?? value;
 
 	return {
 		debug(message: string, data?: unknown): void {
 			if (data !== undefined) {
-				console.debug(prefix, message, data);
+				console.debug(prefix, redact(message), redact(data));
 			} else {
-				console.debug(prefix, message);
+				console.debug(prefix, redact(message));
 			}
 		},
 
 		info(message: string, data?: unknown): void {
 			if (data !== undefined) {
-				console.info(prefix, message, data);
+				console.info(prefix, redact(message), redact(data));
 			} else {
-				console.info(prefix, message);
+				console.info(prefix, redact(message));
 			}
 		},
 
 		warn(message: string, data?: unknown): void {
 			if (data !== undefined) {
-				console.warn(prefix, message, data);
+				console.warn(prefix, redact(message), redact(data));
 			} else {
-				console.warn(prefix, message);
+				console.warn(prefix, redact(message));
 			}
 		},
 
 		error(message: string, data?: unknown): void {
 			if (data !== undefined) {
-				console.error(prefix, message, data);
+				console.error(prefix, redact(message), redact(data));
 			} else {
-				console.error(prefix, message);
+				console.error(prefix, redact(message));
 			}
 		},
 	};
@@ -1172,13 +1177,16 @@ export class PluginContextFactory {
 		const optionsRepo = new OptionsRepository(db);
 
 		// Always available
+		const secretRedactor = createPluginSecretRedactor();
 		const settings = createSettingsAccess(
 			optionsRepo,
 			plugin.id,
 			plugin.admin.settingsSchema ?? {},
+			undefined,
+			secretRedactor.add,
 		);
 		const kv = createKVAccess(optionsRepo, plugin.id, settings);
-		const log = createLogAccess(plugin.id);
+		const log = createLogAccess(plugin.id, secretRedactor);
 		const storage = createStorageAccess(db, plugin.id, plugin.storage);
 
 		// Capability-gated: content

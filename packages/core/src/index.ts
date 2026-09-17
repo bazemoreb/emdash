@@ -15,6 +15,7 @@ export type {
 } from "./database/index.js";
 export { EmDashConfigurationError } from "./config/errors.js";
 export type { EmDashConfigurationErrorCode } from "./config/errors.js";
+export { resolvePluginEncryptionKeys } from "./config/secrets.js";
 
 // Repositories
 export {
@@ -284,6 +285,7 @@ export {
 	createContentAccess,
 	createContentAccessWithWrite,
 	createSettingsAccess,
+	createPluginSecretRedactor,
 	decodePluginSettingValue,
 	encryptPluginSetting,
 	isEncryptedPluginSetting,
@@ -292,6 +294,7 @@ export {
 } from "./plugins/index.js";
 export type {
 	EncryptedPluginSetting,
+	PluginSecretRedactor,
 	PluginDefinition,
 	ResolvedPlugin,
 	PluginCapability,

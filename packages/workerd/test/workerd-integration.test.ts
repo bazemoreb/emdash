@@ -606,7 +606,11 @@ describe.skipIf(!workerdAvailable)("WorkerdSandboxRunner integration", () => {
 		});
 	}, 30_000);
 
-	it("handles plugin unload and reload", async () => {
+	it("reloads the updated settings schema with a new plugin version", async () => {
+		vi.stubEnv(
+			"EMDASH_ENCRYPTION_KEY",
+			"emdash_enc_v1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+		);
 		const plugin1 = await runner.load(
 			{
 				id: "test-reload",
@@ -641,20 +645,28 @@ describe.skipIf(!workerdAvailable)("WorkerdSandboxRunner integration", () => {
 				capabilities: [],
 				allowedHosts: [],
 				storage: {},
+				admin: { settingsSchema: { apiKey: { type: "secret", label: "API key" } } },
 			},
-			ECHO_PLUGIN,
+			SETTINGS_PLUGIN,
 		);
 
 		const result2 = (await plugin2.invokeRoute(
-			"echo",
-			{ v: 2 },
+			"save",
+			{ value: "updated-schema-secret" },
 			{
 				method: "POST",
 				url: "/api/test",
 				headers: {},
 			},
 		)) as any;
-		expect(result2.input.v).toBe(2);
+		expect(result2.settings).toBe("updated-schema-secret");
+		const stored = await db
+			.selectFrom("options" as any)
+			.select("value" as any)
+			.where("name" as any, "=", "plugin:test-reload:settings:apiKey")
+			.executeTakeFirst();
+		expect(stored?.value).not.toContain("updated-schema-secret");
+		expect(JSON.parse(stored!.value)).toMatchObject({ v: 1, kid: expect.any(String) });
 	}, 60_000);
 
 	it("enforces wall-time limit", async () => {

@@ -160,23 +160,38 @@ describe("plugin settings handlers", () => {
 		await expect(options.get(`plugin:${PLUGIN_ID}:settings:apiKey`)).resolves.toBeNull();
 	});
 
-	it("redacts wrong-key failures from admin responses and logs", async () => {
+	it("allows credential replacement and unrelated updates when the stored key is unavailable", async () => {
 		await handlePluginSettingsUpdate(db, PLUGIN_ID, SCHEMA, {
 			apiKey: "must-never-appear",
 		});
 		vi.stubEnv("EMDASH_ENCRYPTION_KEY", generateEncryptionKey());
 		const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
 
-		const result = await handlePluginSettingsGet(db, PLUGIN_ID, SCHEMA);
-
-		expect(result).toEqual({
-			success: false,
-			error: {
-				code: "PLUGIN_SETTINGS_READ_ERROR",
-				message: "Failed to read plugin settings",
-			},
+		const loaded = await handlePluginSettingsGet(db, PLUGIN_ID, SCHEMA);
+		expect(loaded).toMatchObject({
+			success: true,
+			data: { secretsSet: { apiKey: true } },
 		});
-		expect(JSON.stringify(result)).not.toContain("must-never-appear");
+		expect(JSON.stringify(loaded)).not.toContain("must-never-appear");
+
+		const updated = await handlePluginSettingsUpdate(db, PLUGIN_ID, SCHEMA, {
+			enabled: false,
+		});
+		expect(updated).toMatchObject({
+			success: true,
+			data: { values: { enabled: false }, secretsSet: { apiKey: true } },
+		});
+		expect(JSON.stringify(updated)).not.toContain("must-never-appear");
+		const replaced = await handlePluginSettingsUpdate(db, PLUGIN_ID, SCHEMA, {
+			apiKey: "replacement-secret",
+		});
+		expect(replaced).toMatchObject({
+			success: true,
+			data: { secretsSet: { apiKey: true } },
+		});
+		const stored = await new OptionsRepository(db).get(`plugin:${PLUGIN_ID}:settings:apiKey`);
+		expect(JSON.stringify(stored)).not.toContain("must-never-appear");
+		expect(JSON.stringify(stored)).not.toContain("replacement-secret");
 		expect(JSON.stringify(errorLog.mock.calls)).not.toContain("must-never-appear");
 		errorLog.mockRestore();
 	});

@@ -38,6 +38,62 @@ export class PluginSettingEncryptionError extends Error {
 	}
 }
 
+export interface PluginSecretRedactor {
+	add(value: string): void;
+	redact<T>(value: T): T;
+}
+
+export function createPluginSecretRedactor(): PluginSecretRedactor {
+	const secrets = new Set<string>();
+	const redactString = (value: string): string => {
+		let redacted = value;
+		for (const secret of [...secrets].toSorted((a, b) => b.length - a.length)) {
+			redacted = redacted.replaceAll(secret, "[REDACTED]");
+		}
+		return redacted;
+	};
+	const redactValue = (value: unknown, seen: WeakMap<object, unknown>): unknown => {
+		if (typeof value === "string") return redactString(value);
+		if (typeof value !== "object" || value === null) return value;
+		const existing = seen.get(value);
+		if (existing !== undefined) return existing;
+		if (value instanceof Error) {
+			const redacted = new Error(redactString(value.message));
+			redacted.name = value.name;
+			redacted.stack = value.stack ? redactString(value.stack) : undefined;
+			seen.set(value, redacted);
+			return redacted;
+		}
+		if (Array.isArray(value)) {
+			const redacted: unknown[] = [];
+			seen.set(value, redacted);
+			for (const entry of value) redacted.push(redactValue(entry, seen));
+			return redacted;
+		}
+		if (
+			Object.getPrototypeOf(value) === Object.prototype ||
+			Object.getPrototypeOf(value) === null
+		) {
+			const redacted: Record<string, unknown> = {};
+			seen.set(value, redacted);
+			for (const [key, entry] of Object.entries(value)) {
+				redacted[redactString(key)] = redactValue(entry, seen);
+			}
+			return redacted;
+		}
+		return redactString(String(value));
+	};
+
+	return {
+		add(value) {
+			if (value.length > 0) secrets.add(value);
+		},
+		redact<T>(value: T): T {
+			return redactValue(value, new WeakMap()) as T;
+		},
+	};
+}
+
 export function isEncryptedPluginSetting(value: unknown): value is EncryptedPluginSetting {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
 	const envelope = value as Record<string, unknown>;
@@ -170,6 +226,7 @@ export async function encodePluginSettingValue(
 	value: unknown,
 	schema: Record<string, SettingField>,
 	keys?: ParsedEncryptionKey[] | null,
+	onSecret?: (value: string) => void,
 ): Promise<unknown> {
 	if (!isSecretField(schema, key)) return value;
 	if (typeof value !== "string") {
@@ -178,6 +235,7 @@ export async function encodePluginSettingValue(
 			"Plugin secret settings must be strings",
 		);
 	}
+	onSecret?.(value);
 	return encryptPluginSetting(pluginId, key, value, keys);
 }
 
@@ -187,6 +245,7 @@ export async function decodePluginSettingValue<T = unknown>(
 	value: unknown,
 	schema: Record<string, SettingField>,
 	keys?: ParsedEncryptionKey[] | null,
+	onSecret?: (value: string) => void,
 ): Promise<T> {
 	if (!isSecretField(schema, key)) {
 		if (isEncryptedPluginSetting(value)) {
@@ -197,14 +256,19 @@ export async function decodePluginSettingValue<T = unknown>(
 		}
 		return value as T;
 	}
-	if (typeof value === "string") return value as T;
+	if (typeof value === "string") {
+		onSecret?.(value);
+		return value as T;
+	}
 	if (!isEncryptedPluginSetting(value)) {
 		throw new PluginSettingEncryptionError(
 			"PLUGIN_SETTING_DECRYPTION_FAILED",
 			"Plugin secret setting has an invalid encrypted envelope",
 		);
 	}
-	return (await decryptPluginSetting(pluginId, key, value, keys)) as T;
+	const decrypted = await decryptPluginSetting(pluginId, key, value, keys);
+	onSecret?.(decrypted);
+	return decrypted as T;
 }
 
 export function createSettingsAccess(
@@ -212,6 +276,7 @@ export function createSettingsAccess(
 	pluginId: string,
 	schema: Record<string, SettingField> = {},
 	keys?: ParsedEncryptionKey[] | null,
+	onSecret?: (value: string) => void,
 ): SettingsAccess {
 	const prefix = `plugin:${pluginId}:settings:`;
 	const optionKey = (key: string) => {
@@ -224,13 +289,20 @@ export function createSettingsAccess(
 			const value = await optionsRepo.get(optionKey(key));
 			return value === null
 				? null
-				: decodePluginSettingValue<T>(pluginId, key, value, schema, keys);
+				: decodePluginSettingValue<T>(pluginId, key, value, schema, keys, onSecret);
 		},
 		async getVersioned<T>(key: string): Promise<VersionedValue<T> | null> {
 			const value = await optionsRepo.getVersioned(optionKey(key));
 			if (!value) return null;
 			return {
-				value: await decodePluginSettingValue<T>(pluginId, key, value.value, schema, keys),
+				value: await decodePluginSettingValue<T>(
+					pluginId,
+					key,
+					value.value,
+					schema,
+					keys,
+					onSecret,
+				),
 				revision: value.revision,
 			};
 		},
@@ -242,7 +314,7 @@ export function createSettingsAccess(
 			return optionsRepo.compareAndSet(
 				optionKey(key),
 				expectedRevision,
-				await encodePluginSettingValue(pluginId, key, value, schema, keys),
+				await encodePluginSettingValue(pluginId, key, value, schema, keys, onSecret),
 			);
 		},
 		compareAndDelete(key: string, expectedRevision: string): Promise<ConditionalDeleteResult> {
@@ -251,7 +323,7 @@ export function createSettingsAccess(
 		async set(key: string, value: unknown): Promise<void> {
 			await optionsRepo.set(
 				optionKey(key),
-				await encodePluginSettingValue(pluginId, key, value, schema, keys),
+				await encodePluginSettingValue(pluginId, key, value, schema, keys, onSecret),
 			);
 		},
 		delete(key: string): Promise<boolean> {
@@ -265,7 +337,7 @@ export function createSettingsAccess(
 				const key = fullKey.slice(prefix.length);
 				result.push({
 					key,
-					value: await decodePluginSettingValue(pluginId, key, value, schema, keys),
+					value: await decodePluginSettingValue(pluginId, key, value, schema, keys, onSecret),
 				});
 			}
 			return result;

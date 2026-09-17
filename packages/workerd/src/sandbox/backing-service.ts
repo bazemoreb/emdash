@@ -40,7 +40,8 @@ class HttpError extends Error {
  * Create an HTTP request handler for the backing service.
  */
 export function createBackingServiceHandler(runner: WorkerdSandboxRunner): BackingServiceHandler {
-	// Cache bridge handlers per pluginId to avoid re-creation
+	// Cache bridge handlers per installed plugin version so an update cannot
+	// retain the previous manifest's capabilities, storage, or settings schema.
 	const handlerCache = new Map<string, (request: Request) => Promise<Response>>();
 
 	const handler = async (req: IncomingMessage, res: ServerResponse) => {
@@ -62,7 +63,7 @@ export function createBackingServiceHandler(runner: WorkerdSandboxRunner): Backi
 			}
 
 			// Get or create bridge handler for this plugin
-			const cacheKey = claims.pluginId;
+			const cacheKey = `${claims.pluginId}:${claims.version}`;
 			let bridgeHandler = handlerCache.get(cacheKey);
 			if (!bridgeHandler) {
 				bridgeHandler = createBridgeHandler({

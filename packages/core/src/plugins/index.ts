@@ -105,12 +105,13 @@ export type {
 export { StorageSerializationError } from "./storage-query.js";
 export {
 	PluginSettingEncryptionError,
+	createPluginSecretRedactor,
 	createSettingsAccess,
 	decodePluginSettingValue,
 	encryptPluginSetting,
 	isEncryptedPluginSetting,
 } from "./settings.js";
-export type { EncryptedPluginSetting } from "./settings.js";
+export type { EncryptedPluginSetting, PluginSecretRedactor } from "./settings.js";
 
 // Types
 export type {

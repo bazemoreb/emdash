@@ -23,6 +23,7 @@ import {
 	ContentRepository,
 	CronAccessImpl,
 	createContentAccess,
+	createPluginSecretRedactor,
 	createSettingsAccess,
 	createSandboxRouteError,
 	getSandboxRouteErrorDetails,
@@ -31,6 +32,7 @@ import {
 	PluginStorageRepository,
 	StorageSerializationError,
 	resolveContentCreateLocale,
+	resolvePluginEncryptionKeys,
 	type SettingField,
 } from "emdash";
 import { Kysely } from "kysely";
@@ -199,6 +201,7 @@ function rowToTaxonomyTerm(row: Record<string, unknown>): {
 export interface PluginBridgeEnv {
 	DB: D1Database;
 	MEDIA?: R2Bucket;
+	EMDASH_ENCRYPTION_KEY?: string;
 }
 
 /**
@@ -231,18 +234,35 @@ export interface PluginBridgeProps {
  * 3. Plugins call bridge methods which validate and proxy to the database
  */
 export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridgeProps> {
+	private readonly secretRedactor = createPluginSecretRedactor();
+
 	private getOptionsRepo(): OptionsRepository {
 		return new OptionsRepository(
 			new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) }),
 		);
 	}
 
-	private getSettingsAccess() {
+	private async getSettingsAccess() {
+		const keys =
+			this.env.EMDASH_ENCRYPTION_KEY === undefined
+				? undefined
+				: await resolvePluginEncryptionKeys({
+						EMDASH_ENCRYPTION_KEY: this.env.EMDASH_ENCRYPTION_KEY,
+					});
 		return createSettingsAccess(
 			this.getOptionsRepo(),
 			this.ctx.props.pluginId,
 			this.ctx.props.settingsSchema ?? {},
+			keys,
+			this.secretRedactor.add,
 		);
+	}
+
+	private observeSecretSetting(key: string, value: unknown): void {
+		const name = key.slice(SETTINGS_KEY_PREFIX.length);
+		if (this.ctx.props.settingsSchema?.[name]?.type === "secret" && typeof value === "string") {
+			this.secretRedactor.add(value);
+		}
 	}
 
 	private async deleteLegacyKV(key: string): Promise<boolean> {
@@ -305,7 +325,9 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 	async kvGet(key: string): Promise<unknown> {
 		const { pluginId } = this.ctx.props;
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			const value = await this.getSettingsAccess().get(key.slice(SETTINGS_KEY_PREFIX.length));
+			const value = await (
+				await this.getSettingsAccess()
+			).get(key.slice(SETTINGS_KEY_PREFIX.length));
 			if (value !== null) return value;
 		}
 		const result = await this.env.DB.prepare(
@@ -315,8 +337,11 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 			.first<{ data: string }>();
 		if (!result) return null;
 		try {
-			return JSON.parse(result.data);
+			const value: unknown = JSON.parse(result.data);
+			if (key.startsWith(SETTINGS_KEY_PREFIX)) this.observeSecretSetting(key, value);
+			return value;
 		} catch {
+			if (key.startsWith(SETTINGS_KEY_PREFIX)) this.observeSecretSetting(key, result.data);
 			return result.data;
 		}
 	}
@@ -324,7 +349,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 	async kvSet(key: string, value: unknown): Promise<void> {
 		const { pluginId } = this.ctx.props;
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			await this.getSettingsAccess().set(key.slice(SETTINGS_KEY_PREFIX.length), value);
+			await (await this.getSettingsAccess()).set(key.slice(SETTINGS_KEY_PREFIX.length), value);
 			await this.deleteLegacyKV(key);
 			return;
 		}
@@ -337,12 +362,16 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 
 	async kvGetVersioned(key: string): Promise<VersionedValue | null> {
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			const value = await this.getSettingsAccess().getVersioned(
-				key.slice(SETTINGS_KEY_PREFIX.length),
-			);
+			const value = await (
+				await this.getSettingsAccess()
+			).getVersioned(key.slice(SETTINGS_KEY_PREFIX.length));
 			if (value !== null) return value;
 		}
-		return this.getStorageRepo("__kv").getVersioned(key);
+		const legacy = await this.getStorageRepo("__kv").getVersioned(key);
+		if (legacy && key.startsWith(SETTINGS_KEY_PREFIX)) {
+			this.observeSecretSetting(key, legacy.value);
+		}
+		return legacy;
 	}
 
 	async kvCompareAndSet(
@@ -351,11 +380,9 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		value: unknown,
 	): Promise<ConditionalWriteResult> {
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			const result = await this.getSettingsAccess().compareAndSet(
-				key.slice(SETTINGS_KEY_PREFIX.length),
-				expectedRevision,
-				value,
-			);
+			const result = await (
+				await this.getSettingsAccess()
+			).compareAndSet(key.slice(SETTINGS_KEY_PREFIX.length), expectedRevision, value);
 			if (result.applied) await this.deleteLegacyKV(key);
 			return result;
 		}
@@ -367,10 +394,9 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		expectedRevision: string,
 	): Promise<ConditionalDeleteResult> {
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			const result = await this.getSettingsAccess().compareAndDelete(
-				key.slice(SETTINGS_KEY_PREFIX.length),
-				expectedRevision,
-			);
+			const result = await (
+				await this.getSettingsAccess()
+			).compareAndDelete(key.slice(SETTINGS_KEY_PREFIX.length), expectedRevision);
 			if (result.applied) await this.deleteLegacyKV(key);
 			return result;
 		}
@@ -380,9 +406,9 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 	async kvDelete(key: string): Promise<boolean> {
 		const { pluginId } = this.ctx.props;
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			const optionDeleted = await this.getSettingsAccess().delete(
-				key.slice(SETTINGS_KEY_PREFIX.length),
-			);
+			const optionDeleted = await (
+				await this.getSettingsAccess()
+			).delete(key.slice(SETTINGS_KEY_PREFIX.length));
 			const legacyDeleted = await this.deleteLegacyKV(key);
 			return optionDeleted || legacyDeleted;
 		}
@@ -411,10 +437,13 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 			const settingPrefix = prefix.startsWith(SETTINGS_KEY_PREFIX)
 				? prefix.slice(SETTINGS_KEY_PREFIX.length)
 				: "";
-			for (const { key, value } of await this.getSettingsAccess().list(settingPrefix)) {
+			for (const { key, value } of await (await this.getSettingsAccess()).list(settingPrefix)) {
 				const fullKey = `${SETTINGS_KEY_PREFIX}${key}`;
 				if (fullKey.startsWith(prefix)) entries.set(fullKey, value);
 			}
+		}
+		for (const [key, value] of entries) {
+			if (key.startsWith(SETTINGS_KEY_PREFIX)) this.observeSecretSetting(key, value);
 		}
 		return Array.from(entries, ([key, value]) => ({ key, value }));
 	}
@@ -1336,6 +1365,10 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 
 	log(level: "debug" | "info" | "warn" | "error", msg: string, data?: unknown): void {
 		const { pluginId } = this.ctx.props;
-		console[level](`[plugin:${pluginId}]`, msg, data ?? "");
+		console[level](
+			`[plugin:${pluginId}]`,
+			this.secretRedactor.redact(msg),
+			this.secretRedactor.redact(data ?? ""),
+		);
 	}
 }

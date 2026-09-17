@@ -13,7 +13,7 @@ import { OptionsRepository } from "../../database/repositories/options.js";
 import { withTransaction } from "../../database/transaction.js";
 import type { Database } from "../../database/types.js";
 import type { SandboxedPluginEntry } from "../../emdash-runtime.js";
-import { decodePluginSettingValue, encodePluginSettingValue } from "../../plugins/settings.js";
+import { encodePluginSettingValue } from "../../plugins/settings.js";
 import type { ResolvedPlugin, SettingField } from "../../plugins/types.js";
 import { ErrorCode } from "../errors.js";
 import type { ApiResult } from "../types.js";
@@ -115,12 +115,7 @@ async function buildSettingsResponse(
 		const storedValue = stored.get(settingsKey(pluginId, key));
 
 		if (field.type === "secret") {
-			if (storedValue === undefined || storedValue === null) {
-				secretsSet[key] = false;
-			} else {
-				const secret = await decodePluginSettingValue<string>(pluginId, key, storedValue, schema);
-				secretsSet[key] = secret.length > 0;
-			}
+			secretsSet[key] = storedValue !== undefined && storedValue !== null && storedValue !== "";
 			continue;
 		}
 

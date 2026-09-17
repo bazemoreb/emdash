@@ -192,7 +192,9 @@ The submitted values omit the secret until the user edits it, and may contain an
 	database backup alone cannot recover encrypted plugin settings.
 </Aside>
 
-EmDash encrypts `secret` schema fields with AES-GCM. The authenticated data binds each value to its plugin ID and setting key, so copying an envelope to another plugin or key fails decryption. The first key in `EMDASH_ENCRYPTION_KEY` encrypts new writes; EmDash selects older keys by their fingerprint when reading. Missing, wrong, or tampered keys fail closed. Admin responses, host errors, and logs do not contain the plaintext.
+EmDash encrypts `secret` schema fields with AES-GCM. The authenticated data binds each value to its plugin ID and setting key, so copying an envelope to another plugin or key fails decryption. The first key in `EMDASH_ENCRYPTION_KEY` encrypts new writes; EmDash selects older keys by their fingerprint when reading. Missing, wrong, or tampered keys fail closed. Admin responses and host errors do not contain the plaintext. After a plugin reads or writes a secret, the host logger redacts that exact value from later `ctx.log` messages and structured data.
+
+The plugin still receives the plaintext and can transform it or send it through declared network or email access. Review those capabilities before entering a credential, and never log derived or encoded secret material.
 
 Existing plaintext values remain readable. Save the value again to replace it with an encrypted envelope. If a secret must not be written to the EmDash database even in encrypted form, use a native plugin backed by a deployment secret or an external credential service. Sandboxed plugins cannot read the host process's environment or platform bindings.
 

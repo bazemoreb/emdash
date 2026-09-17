@@ -19,6 +19,7 @@ import {
 	CronAccessImpl,
 	createContentAccess,
 	createHttpAccess,
+	createPluginSecretRedactor,
 	createSettingsAccess,
 	createSandboxRouteErrorEnvelope,
 	createUnrestrictedHttpAccess,
@@ -34,6 +35,7 @@ import type {
 	Database,
 	I18nConfig,
 	SandboxEmailSendCallback,
+	PluginSecretRedactor,
 	SettingField,
 } from "emdash";
 import type { Kysely } from "kysely";
@@ -121,6 +123,7 @@ export interface BridgeHandlerOptions {
 	/** Full storage config (with indexes) for proper query/count delegation */
 	storageConfig?: Record<string, BridgeStorageCollectionConfig>;
 	settingsSchema?: Record<string, SettingField>;
+	secretRedactor?: PluginSecretRedactor;
 	i18nConfig?: I18nConfig | null;
 	db: Kysely<Database>;
 	beforeContentWrite?: () => Promise<void>;
@@ -138,7 +141,11 @@ export interface BridgeHandlerOptions {
 export function createBridgeHandler(
 	opts: BridgeHandlerOptions,
 ): (request: Request) => Promise<Response> {
-	const normalizedOpts = { ...opts, capabilities: normalizeCapabilities(opts.capabilities) };
+	const normalizedOpts = {
+		...opts,
+		capabilities: normalizeCapabilities(opts.capabilities),
+		secretRedactor: createPluginSecretRedactor(),
+	};
 	return async (request: Request): Promise<Response> => {
 		try {
 			const url = new URL(request.url);
@@ -204,9 +211,22 @@ async function dispatch(
 	switch (method) {
 		// ── KV (stored in _plugin_storage with collection='__kv') ────────
 		case "kv/get":
-			return kvGet(db, pluginId, requireString(body, "key"), opts.settingsSchema);
+			return kvGet(
+				db,
+				pluginId,
+				requireString(body, "key"),
+				opts.settingsSchema,
+				opts.secretRedactor,
+			);
 		case "kv/set":
-			return kvSet(db, pluginId, requireString(body, "key"), body.value, opts.settingsSchema);
+			return kvSet(
+				db,
+				pluginId,
+				requireString(body, "key"),
+				body.value,
+				opts.settingsSchema,
+				opts.secretRedactor,
+			);
 		case "kv/getVersioned":
 			return kvGetVersioned(db, pluginId, requireString(body, "key"), opts);
 		case "kv/compareAndSet":
@@ -227,15 +247,28 @@ async function dispatch(
 				opts,
 			);
 		case "kv/delete":
-			return kvDelete(db, pluginId, requireString(body, "key"), opts.settingsSchema);
+			return kvDelete(
+				db,
+				pluginId,
+				requireString(body, "key"),
+				opts.settingsSchema,
+				opts.secretRedactor,
+			);
 		case "kv/list":
-			return kvList(db, pluginId, optionalString(body, "prefix") ?? "", opts.settingsSchema);
+			return kvList(
+				db,
+				pluginId,
+				optionalString(body, "prefix") ?? "",
+				opts.settingsSchema,
+				opts.secretRedactor,
+			);
 		case "settings/get":
 			return kvGet(
 				db,
 				pluginId,
 				`${SETTINGS_KEY_PREFIX}${requireString(body, "key")}`,
 				opts.settingsSchema,
+				opts.secretRedactor,
 			);
 		case "settings/set":
 			return kvSet(
@@ -244,6 +277,7 @@ async function dispatch(
 				`${SETTINGS_KEY_PREFIX}${requireString(body, "key")}`,
 				body.value,
 				opts.settingsSchema,
+				opts.secretRedactor,
 			);
 		case "settings/getVersioned":
 			return kvGetVersioned(
@@ -275,6 +309,7 @@ async function dispatch(
 				pluginId,
 				`${SETTINGS_KEY_PREFIX}${requireString(body, "key")}`,
 				opts.settingsSchema,
+				opts.secretRedactor,
 			);
 		case "settings/list": {
 			const entries = await kvList(
@@ -282,6 +317,7 @@ async function dispatch(
 				pluginId,
 				`${SETTINGS_KEY_PREFIX}${optionalString(body, "prefix") ?? ""}`,
 				opts.settingsSchema,
+				opts.secretRedactor,
 			);
 			return entries.map(({ key, value }) => ({
 				key: key.slice(SETTINGS_KEY_PREFIX.length),
@@ -505,7 +541,11 @@ async function dispatch(
 		case "log": {
 			const level = requireLogLevel(body, "level");
 			const msg = requireString(body, "msg");
-			console[level](`[plugin:${pluginId}]`, msg, body.data ?? "");
+			console[level](
+				`[plugin:${pluginId}]`,
+				opts.secretRedactor?.redact(msg) ?? msg,
+				opts.secretRedactor?.redact(body.data ?? "") ?? body.data ?? "",
+			);
 			return null;
 		}
 
@@ -788,17 +828,32 @@ function isSettingsKey(key: string): boolean {
 	return key.startsWith(SETTINGS_KEY_PREFIX);
 }
 
+function observeSecretSetting(
+	key: string,
+	value: unknown,
+	settingsSchema: Record<string, SettingField>,
+	secretRedactor?: PluginSecretRedactor,
+): void {
+	const name = key.slice(SETTINGS_KEY_PREFIX.length);
+	if (settingsSchema[name]?.type === "secret" && typeof value === "string") {
+		secretRedactor?.add(value);
+	}
+}
+
 async function kvGet(
 	db: Kysely<Database>,
 	pluginId: string,
 	key: string,
 	settingsSchema: Record<string, SettingField> = {},
+	secretRedactor?: PluginSecretRedactor,
 ): Promise<unknown> {
 	if (isSettingsKey(key)) {
 		const value = await createSettingsAccess(
 			new OptionsRepository(db),
 			pluginId,
 			settingsSchema,
+			undefined,
+			secretRedactor?.add,
 		).get(key.slice(SETTINGS_KEY_PREFIX.length));
 		if (value !== null) return value;
 	}
@@ -811,8 +866,11 @@ async function kvGet(
 		.executeTakeFirst();
 	if (!row) return null;
 	try {
-		return JSON.parse(row.data);
+		const value: unknown = JSON.parse(row.data);
+		if (isSettingsKey(key)) observeSecretSetting(key, value, settingsSchema, secretRedactor);
+		return value;
 	} catch {
+		if (isSettingsKey(key)) observeSecretSetting(key, row.data, settingsSchema, secretRedactor);
 		return row.data;
 	}
 }
@@ -823,12 +881,16 @@ async function kvSet(
 	key: string,
 	value: unknown,
 	settingsSchema: Record<string, SettingField> = {},
+	secretRedactor?: PluginSecretRedactor,
 ): Promise<void> {
 	if (isSettingsKey(key)) {
-		await createSettingsAccess(new OptionsRepository(db), pluginId, settingsSchema).set(
-			key.slice(SETTINGS_KEY_PREFIX.length),
-			value,
-		);
+		await createSettingsAccess(
+			new OptionsRepository(db),
+			pluginId,
+			settingsSchema,
+			undefined,
+			secretRedactor?.add,
+		).set(key.slice(SETTINGS_KEY_PREFIX.length), value);
 		await kvDeleteLegacy(db, pluginId, key);
 		return;
 	}
@@ -846,10 +908,16 @@ async function kvGetVersioned(
 			new OptionsRepository(db),
 			pluginId,
 			opts.settingsSchema,
+			undefined,
+			opts.secretRedactor?.add,
 		).getVersioned(key.slice(SETTINGS_KEY_PREFIX.length));
 		if (value !== null) return value;
 	}
-	return getStorageRepo(opts, "__kv").getVersioned(key);
+	const legacy = await getStorageRepo(opts, "__kv").getVersioned(key);
+	if (legacy && isSettingsKey(key)) {
+		observeSecretSetting(key, legacy.value, opts.settingsSchema ?? {}, opts.secretRedactor);
+	}
+	return legacy;
 }
 
 async function kvCompareAndSet(
@@ -867,6 +935,8 @@ async function kvCompareAndSet(
 		new OptionsRepository(db),
 		pluginId,
 		opts.settingsSchema,
+		undefined,
+		opts.secretRedactor?.add,
 	).compareAndSet(key.slice(SETTINGS_KEY_PREFIX.length), expectedRevision, value);
 	if (result.applied) await kvDeleteLegacy(db, pluginId, key);
 	return result;
@@ -910,6 +980,7 @@ async function kvDelete(
 	pluginId: string,
 	key: string,
 	settingsSchema: Record<string, SettingField> = {},
+	_secretRedactor?: PluginSecretRedactor,
 ): Promise<boolean> {
 	if (isSettingsKey(key)) {
 		const [optionDeleted, legacyDeleted] = await Promise.all([
@@ -928,6 +999,7 @@ async function kvList(
 	pluginId: string,
 	prefix: string,
 	settingsSchema: Record<string, SettingField> = {},
+	secretRedactor?: PluginSecretRedactor,
 ): Promise<Array<{ key: string; value: unknown }>> {
 	const rows = await db
 		.selectFrom("_plugin_storage")
@@ -948,10 +1020,15 @@ async function kvList(
 			new OptionsRepository(db),
 			pluginId,
 			settingsSchema,
+			undefined,
+			secretRedactor?.add,
 		).list(settingPrefix)) {
 			const fullKey = `${SETTINGS_KEY_PREFIX}${key}`;
 			if (fullKey.startsWith(prefix)) entries.set(fullKey, value);
 		}
+	}
+	for (const [key, value] of entries) {
+		if (isSettingsKey(key)) observeSecretSetting(key, value, settingsSchema, secretRedactor);
 	}
 	return Array.from(entries, ([key, value]) => ({ key, value }));
 }

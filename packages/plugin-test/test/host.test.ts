@@ -18,6 +18,7 @@ afterEach(async () => {
 	await host?.dispose();
 	host = undefined;
 	vi.unstubAllEnvs();
+	vi.restoreAllMocks();
 });
 
 describe("runtime plugin test host", () => {

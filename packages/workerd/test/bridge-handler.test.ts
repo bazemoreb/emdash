@@ -81,6 +81,7 @@ describe("Bridge Handler Conformance", () => {
 
 	afterEach(async () => {
 		vi.unstubAllEnvs();
+		vi.restoreAllMocks();
 		await db.destroy();
 		sqlite.close();
 	});
@@ -146,6 +147,14 @@ describe("Bridge Handler Conformance", () => {
 				.executeTakeFirst();
 			expect(stored?.value).not.toContain("workerd-secret");
 			expect(JSON.parse(stored!.value)).toMatchObject({ v: 1, kid: expect.any(String) });
+			const infoLog = vi.spyOn(console, "info").mockImplementation(() => undefined);
+			await call(handler, "log", {
+				level: "info",
+				msg: "credential=workerd-secret",
+				data: { token: "workerd-secret" },
+			});
+			expect(JSON.stringify(infoLog.mock.calls)).toContain("[REDACTED]");
+			expect(JSON.stringify(infoLog.mock.calls)).not.toContain("workerd-secret");
 		});
 
 		it("fails closed without an encryption key and redacts the submitted secret", async () => {

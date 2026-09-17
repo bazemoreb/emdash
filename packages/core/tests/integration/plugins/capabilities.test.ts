@@ -149,6 +149,7 @@ describe("Capability Enforcement Integration (v2)", () => {
 
 	afterEach(async () => {
 		vi.unstubAllEnvs();
+		vi.restoreAllMocks();
 		setI18nConfig(null);
 		await db.destroy();
 		sqliteDb.close();
@@ -829,6 +830,10 @@ describe("Capability Enforcement Integration (v2)", () => {
 			await expect(ctx.kv.get("settings:apiKey")).resolves.toBe("native-secret");
 			const raw = await new OptionsRepository(db).get("plugin:settings-owner:settings:apiKey");
 			expect(JSON.stringify(raw)).not.toContain("native-secret");
+			const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+			ctx.log.error("credential=native-secret", { nested: { token: "native-secret" } });
+			expect(JSON.stringify(errorLog.mock.calls)).toContain("[REDACTED]");
+			expect(JSON.stringify(errorLog.mock.calls)).not.toContain("native-secret");
 
 			const other = factory.createContext(
 				createTestPlugin({
