@@ -23,6 +23,7 @@ import {
 	ContentRepository,
 	CronAccessImpl,
 	createContentAccess,
+	createSchemaAccess,
 	createSandboxRouteError,
 	getSandboxRouteErrorDetails,
 	ulid,
@@ -123,6 +124,11 @@ function rowToContentItem(collection: string, row: Record<string, unknown>) {
 		locale: typeof row.locale === "string" ? row.locale : "en",
 		publishedAt: typeof row.published_at === "string" ? row.published_at : null,
 		scheduledAt: typeof row.scheduled_at === "string" ? row.scheduled_at : null,
+		authorId: columnNullableString(row.author_id),
+		translationGroup: columnNullableString(row.translation_group),
+		liveRevisionId: columnNullableString(row.live_revision_id),
+		draftRevisionId: columnNullableString(row.draft_revision_id),
+		version: typeof row.version === "number" ? row.version : Number(row.version) || 1,
 	};
 }
 
@@ -209,6 +215,12 @@ export interface PluginBridgeProps {
 	allowedHosts: string[];
 	storageCollections: string[];
 	i18nConfig?: I18nConfig | null;
+	siteInfo?: {
+		name: string;
+		url: string;
+		locale: string;
+		trailingSlash?: "always" | "never" | "ignore";
+	};
 	/** Per-collection storage config (matches manifest.storage entries) */
 	storageConfig?: Record<
 		string,
@@ -228,6 +240,29 @@ export interface PluginBridgeProps {
  * 3. Plugins call bridge methods which validate and proxy to the database
  */
 export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridgeProps> {
+	private db(): Kysely<Database> {
+		return new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
+	}
+
+	private requireCapability(capability: string): void {
+		if (!this.ctx.props.capabilities.includes(capability)) {
+			throw new Error(`Missing capability: ${capability}`);
+		}
+	}
+
+	private validateCollection(collection: string): void {
+		if (!COLLECTION_NAME_REGEX.test(collection)) {
+			throw new Error(`Invalid collection name: ${collection}`);
+		}
+	}
+
+	private contentAccess() {
+		return createContentAccess(this.db(), {
+			site: this.ctx.props.siteInfo,
+			revisions: this.ctx.props.capabilities.includes("content:revisions:read"),
+		});
+	}
+
 	private getOptionsRepo(): OptionsRepository {
 		return new OptionsRepository(
 			new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) }),
@@ -628,7 +663,10 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		}
 		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
 		try {
-			return await createContentAccess(db).get(collection, id);
+			return await createContentAccess(db, {
+				site: this.ctx.props.siteInfo,
+				revisions: capabilities.includes("content:revisions:read"),
+			}).get(collection, id);
 		} catch {
 			const row = await this.env.DB.prepare(
 				`SELECT * FROM ec_${collection} WHERE id = ? AND deleted_at IS NULL`,
@@ -652,7 +690,45 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 			throw new Error(`Invalid collection name: ${collection}`);
 		}
 		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
-		return createContentAccess(db).list(collection, opts);
+		return createContentAccess(db, {
+			site: this.ctx.props.siteInfo,
+			revisions: capabilities.includes("content:revisions:read"),
+		}).list(collection, opts);
+	}
+
+	async contentTranslations(collection: string, id: string) {
+		this.requireCapability("content:read");
+		this.validateCollection(collection);
+		return this.contentAccess().getTranslations!(collection, id);
+	}
+
+	async contentPublicUrl(collection: string, id: string) {
+		this.requireCapability("content:read");
+		this.validateCollection(collection);
+		return this.contentAccess().getPublicUrl!(collection, id);
+	}
+
+	async contentListRevisions(collection: string, id: string, options?: { limit?: number }) {
+		this.requireCapability("content:revisions:read");
+		this.validateCollection(collection);
+		return this.contentAccess().listRevisions!(collection, id, options);
+	}
+
+	async contentGetRevision(collection: string, id: string, revisionId: string) {
+		this.requireCapability("content:revisions:read");
+		this.validateCollection(collection);
+		return this.contentAccess().getRevision!(collection, id, revisionId);
+	}
+
+	async schemaListCollections() {
+		this.requireCapability("schema:read");
+		return createSchemaAccess(this.db()).listCollections();
+	}
+
+	async schemaGetCollection(slug: string) {
+		this.requireCapability("schema:read");
+		this.validateCollection(slug);
+		return createSchemaAccess(this.db()).getCollection(slug);
 	}
 
 	async contentCreate(

@@ -13,12 +13,14 @@ import { EntryLockRepository } from "../database/repositories/entry-locks.js";
 import { MediaRepository } from "../database/repositories/media.js";
 import { OptionsRepository } from "../database/repositories/options.js";
 import { PluginStorageRepository } from "../database/repositories/plugin-storage.js";
+import { RevisionRepository } from "../database/repositories/revision.js";
 import { SeoRepository } from "../database/repositories/seo.js";
 import { TaxonomyRepository, type Taxonomy } from "../database/repositories/taxonomy.js";
 import { UserRepository } from "../database/repositories/user.js";
 import { withTransaction } from "../database/transaction.js";
 import type { Database } from "../database/types.js";
 import { resolveContentCreateLocale } from "../i18n/config.js";
+import { resolveLocalizedContentRoutePath } from "../i18n/resolve.js";
 import {
 	resolveAndValidateExternalUrl,
 	SsrfError,
@@ -26,6 +28,7 @@ import {
 } from "../import/ssrf.js";
 import { enrichImageMetadata } from "../media/enrich.js";
 import { markContentMediaUsageCollectionStaleSafely } from "../media/usage/content-refresh.js";
+import { SchemaRegistry } from "../schema/registry.js";
 import { invalidateSiteSettingsCache } from "../settings/index.js";
 import type { Storage } from "../storage/types.js";
 import { assertStorageKey } from "./conditional-storage.js";
@@ -61,6 +64,8 @@ import type {
 	TaxonomyDefInfo,
 	TaxonomyTermInfo,
 	TaxonomyReadOptions,
+	SchemaAccess,
+	CollectionSchemaInfo,
 } from "./types.js";
 
 // =============================================================================
@@ -253,7 +258,10 @@ function taxonomyToTermInfo(term: Taxonomy): TaxonomyTermInfo {
 /**
  * Create read-only content access
  */
-export function createContentAccess(db: Kysely<Database>): ContentAccess {
+export function createContentAccess(
+	db: Kysely<Database>,
+	accessOptions?: { site?: SiteInfo; revisions?: boolean },
+): ContentAccess {
 	const contentRepo = new ContentRepository(db);
 	const seoRepo = new SeoRepository(db);
 
@@ -273,6 +281,11 @@ export function createContentAccess(db: Kysely<Database>): ContentAccess {
 				locale: item.locale,
 				publishedAt: item.publishedAt,
 				scheduledAt: item.scheduledAt,
+				authorId: item.authorId,
+				translationGroup: item.translationGroup,
+				liveRevisionId: item.liveRevisionId,
+				draftRevisionId: item.draftRevisionId,
+				version: item.version,
 			};
 
 			if (await seoRepo.isEnabled(collection)) {
@@ -314,6 +327,11 @@ export function createContentAccess(db: Kysely<Database>): ContentAccess {
 				locale: item.locale,
 				publishedAt: item.publishedAt,
 				scheduledAt: item.scheduledAt,
+				authorId: item.authorId,
+				translationGroup: item.translationGroup,
+				liveRevisionId: item.liveRevisionId,
+				draftRevisionId: item.draftRevisionId,
+				version: item.version,
 			}));
 
 			if (items.length > 0 && (await seoRepo.isEnabled(collection))) {
@@ -332,6 +350,120 @@ export function createContentAccess(db: Kysely<Database>): ContentAccess {
 				cursor: result.nextCursor,
 				hasMore: !!result.nextCursor,
 			};
+		},
+
+		async getTranslations(collection, id) {
+			const item = await contentRepo.findById(collection, id);
+			if (!item) throw new Error(`Content not found: ${collection}/${id}`);
+			const translationGroup = item.translationGroup || item.id;
+			const translations = item.translationGroup
+				? await contentRepo.findTranslations(collection, item.translationGroup)
+				: [item];
+			return {
+				translationGroup,
+				translations: translations.map((translation) => ({
+					id: translation.id,
+					locale: translation.locale,
+					slug: translation.slug,
+					status: translation.status,
+					updatedAt: translation.updatedAt,
+				})),
+			};
+		},
+
+		async getPublicUrl(collection, id) {
+			const site = accessOptions?.site;
+			if (!site?.url) return null;
+			const [item, collectionInfo] = await Promise.all([
+				contentRepo.findById(collection, id),
+				new SchemaRegistry(db).getCollection(collection),
+			]);
+			if (!item || item.status !== "published" || !item.slug || !collectionInfo?.routable) {
+				return null;
+			}
+			const path = await resolveLocalizedContentRoutePath({
+				pattern: collectionInfo.urlPattern ?? null,
+				collection,
+				slug: item.slug,
+				id: item.id,
+				date: item.publishedAt,
+				locale: item.locale || site.locale,
+				trailingSlash: site.trailingSlash,
+			});
+			return path === null ? null : `${site.url}${path}`;
+		},
+
+		...(accessOptions?.revisions
+			? {
+					async listRevisions(
+						collection: string,
+						id: string,
+						revisionOptions?: { limit?: number },
+					) {
+						const revisions = await new RevisionRepository(db).findVisibleByEntry(collection, id, {
+							limit: Math.min(Math.max(revisionOptions?.limit ?? 50, 1), 100),
+						});
+						return revisions.map(({ authorId: _authorId, ...revision }) => revision);
+					},
+					async getRevision(collection: string, id: string, revisionId: string) {
+						const revision = await new RevisionRepository(db).findVisibleById(
+							collection,
+							id,
+							revisionId,
+						);
+						if (!revision) return null;
+						const { authorId: _authorId, ...safeRevision } = revision;
+						return safeRevision;
+					},
+				}
+			: {}),
+	};
+}
+
+function collectionToSchemaInfo(
+	collection: Awaited<ReturnType<SchemaRegistry["getCollectionWithFields"]>>,
+): CollectionSchemaInfo | null {
+	if (!collection) return null;
+	return {
+		slug: collection.slug,
+		label: collection.label,
+		labelSingular: collection.labelSingular ?? null,
+		description: collection.description ?? null,
+		supports: collection.supports,
+		hasSeo: collection.hasSeo,
+		titleField: collection.titleField ?? null,
+		dateField: collection.dateField ?? null,
+		urlPattern: collection.urlPattern ?? null,
+		routable: collection.routable !== false,
+		hidden: collection.hidden,
+		fields: collection.fields.map((field) => ({
+			slug: field.slug,
+			label: field.label,
+			type: field.type,
+			required: field.required,
+			unique: field.unique,
+			...(field.defaultValue === undefined ? {} : { default: field.defaultValue }),
+			...(field.validation === undefined ? {} : { validation: field.validation }),
+			...(field.widget === undefined ? {} : { widget: field.widget }),
+			...(field.options === undefined ? {} : { options: field.options }),
+			searchable: field.searchable,
+			indexed: field.indexed,
+			translatable: field.translatable,
+			sortOrder: field.sortOrder,
+		})),
+	};
+}
+
+export function createSchemaAccess(db: Kysely<Database>): SchemaAccess {
+	const registry = new SchemaRegistry(db);
+	return {
+		async listCollections() {
+			return (await registry.listCollectionsWithFields()).map((collection) =>
+				collectionToSchemaInfo(collection)!,
+			);
+		},
+		async getCollection(slug) {
+			return collectionToSchemaInfo(await registry.getCollectionWithFields(slug));
 		},
 	};
 }
@@ -390,8 +522,9 @@ export function createTaxonomyAccess(db: Kysely<Database>): TaxonomyAccess {
 export function createContentAccessWithWrite(
 	db: Kysely<Database>,
 	beforeContentWrite?: () => Promise<void>,
+	accessOptions?: { site?: SiteInfo; revisions?: boolean },
 ): ContentAccessWithWrite {
-	const readAccess = createContentAccess(db);
+	const readAccess = createContentAccess(db, accessOptions);
 
 	return {
 		...readAccess,
@@ -1148,10 +1281,18 @@ export class PluginContextFactory {
 		// names ("read:content", "write:content") never appear here.
 		let content: ContentAccess | ContentAccessWithWrite | undefined;
 		if (capabilities.has("content:write")) {
-			content = createContentAccessWithWrite(db, this.beforeContentWrite);
+			content = createContentAccessWithWrite(db, this.beforeContentWrite, {
+				site: this.site,
+				revisions: capabilities.has("content:revisions:read"),
+			});
 		} else if (capabilities.has("content:read")) {
-			content = createContentAccess(db);
+			content = createContentAccess(db, {
+				site: this.site,
+				revisions: capabilities.has("content:revisions:read"),
+			});
 		}
+
+		const schema = capabilities.has("schema:read") ? createSchemaAccess(db) : undefined;
 
 		// Capability-gated: taxonomies (read-only)
 		let taxonomies: TaxonomyAccess | undefined;
@@ -1222,6 +1363,7 @@ export class PluginContextFactory {
 			storage,
 			kv,
 			content,
+			schema,
 			taxonomies,
 			media,
 			http,
