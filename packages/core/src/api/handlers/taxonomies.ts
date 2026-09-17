@@ -912,15 +912,6 @@ export async function handleTermCreate(
 		// Coerce empty-string parentId to undefined (treat as "no parent").
 		const parentId =
 			input.parentId === "" || input.parentId === undefined ? undefined : input.parentId;
-		if (parentId !== undefined && parentId !== null && lookup.def.hierarchical !== 1) {
-			return {
-				success: false,
-				error: {
-					code: "VALIDATION_ERROR",
-					message: `Taxonomy '${taxonomyName}' is not hierarchical`,
-				},
-			};
-		}
 
 		// Conflict check is scoped to locale (per-locale slugs are unique).
 		const existing =

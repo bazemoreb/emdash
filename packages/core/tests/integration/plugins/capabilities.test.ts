@@ -410,7 +410,7 @@ describe("Capability Enforcement Integration (v2)", () => {
 				expect(taxOnly.content).toBeUndefined();
 			});
 
-			it("creates terms and rejects hierarchy on flat taxonomies", async () => {
+			it("creates terms and rejects parents from another taxonomy", async () => {
 				const access = createTaxonomyAccessWithWrite(db);
 				const created = await access.createTerm("genre", {
 					label: "Reviews",
@@ -424,7 +424,7 @@ describe("Capability Enforcement Integration (v2)", () => {
 					locale: "en",
 				});
 				await expect(
-					access.createTerm("topic", { label: "Models", parentId: "term-ai" }),
+					access.createTerm("topic", { label: "Models", parentId: "term-news" }),
 				).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
 			});
 
