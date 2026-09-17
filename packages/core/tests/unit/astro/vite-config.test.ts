@@ -211,6 +211,65 @@ describe("createViteConfig inline Portable Text hydration deps", () => {
 	});
 });
 
+describe("createViteConfig Cloudflare built-ins externalization", () => {
+	const externalProjectRoot = new URL("file:///workspace/emdash-site/");
+
+	function buildConfig(adapter: string) {
+		return createViteConfig(
+			{
+				serializableConfig: {},
+				resolvedConfig: {} as never,
+				pluginDescriptors: [],
+				astroConfig: {
+					root: externalProjectRoot,
+					adapter: { name: adapter },
+				} as AstroConfig,
+			},
+			"build",
+		);
+	}
+
+	function isExternal(external: unknown, specifier: string) {
+		if (!Array.isArray(external)) return false;
+		return external.some((value: string | RegExp) =>
+			typeof value === "string" ? value === specifier : value.test(specifier),
+		);
+	}
+
+	function ssrExternalizes(config: ReturnType<typeof createViteConfig>, specifier: string) {
+		return isExternal(config.ssr?.external, specifier);
+	}
+
+	function rollupExternalizes(config: ReturnType<typeof createViteConfig>, specifier: string) {
+		return isExternal(config.build?.rollupOptions?.external, specifier);
+	}
+
+	it("externalizes cloudflare: sockets and workers on the Node adapter", () => {
+		const config = buildConfig("@astrojs/node");
+
+		expect(ssrExternalizes(config, "cloudflare:sockets")).toBe(true);
+		expect(ssrExternalizes(config, "cloudflare:workers")).toBe(true);
+		expect(rollupExternalizes(config, "cloudflare:sockets")).toBe(true);
+		expect(rollupExternalizes(config, "cloudflare:workers")).toBe(true);
+	});
+
+	it("preserves existing Node-only external modules on the Node adapter", () => {
+		const config = buildConfig("@astrojs/node");
+
+		expect(ssrExternalizes(config, "@libsql/kysely-libsql")).toBe(true);
+		expect(ssrExternalizes(config, "pg")).toBe(true);
+	});
+
+	it("does not externalize cloudflare: built-ins under the Cloudflare adapter", () => {
+		const config = buildConfig("@astrojs/cloudflare");
+
+		expect(ssrExternalizes(config, "cloudflare:sockets")).toBe(false);
+		expect(ssrExternalizes(config, "cloudflare:workers")).toBe(false);
+		expect(rollupExternalizes(config, "cloudflare:sockets")).toBe(false);
+		expect(rollupExternalizes(config, "cloudflare:workers")).toBe(false);
+	});
+});
+
 describe("createViteConfig Astro logger optimization", () => {
 	const astroSevenRoot = new URL("../../../../../demos/cloudflare/", import.meta.url);
 	let projectWithoutConsoleLoggerRoot: URL;

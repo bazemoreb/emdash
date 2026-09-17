@@ -363,7 +363,16 @@ export function createVirtualModulesPlugin(
 // `?url`), so both forms resolve to dist rather than the source alias.
 const ADMIN_STYLES_ALIAS = /^@emdash-cms\/admin\/styles\.css/;
 
-const NODE_NATIVE_EXTERNALS = ["@libsql/kysely-libsql", "pg"];
+const NODE_NATIVE_EXTERNALS: (string | RegExp)[] = [
+	"@libsql/kysely-libsql",
+	"pg",
+	// Cloudflare Workers built-ins (cloudflare:sockets, cloudflare:workers)
+	// must be external on Node builds; the dynamic import in
+	// registry/artifact-fetch.ts otherwise trips Rollup because it has no
+	// cloudflare: resolver. The Cloudflare adapter handles its own
+	// externalization, so this is gated on the adapter below.
+	/^cloudflare:/,
+];
 
 /**
  * Detect whether the Cloudflare adapter is being used.
@@ -598,6 +607,18 @@ export function createViteConfig(
 			: {
 					external: NODE_NATIVE_EXTERNALS,
 					noExternal: ["emdash", "@emdash-cms/admin"],
+				},
+		// On Node builds, prevent Rollup from trying to resolve the cloudflare:
+		// dynamic import in registry/artifact-fetch.ts. Same externals as
+		// ssr.external, but applied to the client/server Rollup pass where
+		// the unresolved specifier actually fails. Cloudflare handles these
+		// internally, so only set this on the non-Cloudflare path.
+		build: cloudflare
+			? undefined
+			: {
+					rollupOptions: {
+						external: NODE_NATIVE_EXTERNALS,
+					},
 				},
 		optimizeDeps: {
 			// When using source, don't pre-bundle JS — let Vite transform on the fly for HMR.
