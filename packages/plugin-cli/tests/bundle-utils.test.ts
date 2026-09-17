@@ -31,6 +31,14 @@ const minimalResolved = (overrides: Partial<ResolvedPlugin> = {}): ResolvedPlugi
 });
 
 describe("extractManifest", () => {
+	it("closes redirect write authority under its read implication", () => {
+		const manifest = extractManifest(minimalResolved({ capabilities: ["redirects:write"] }));
+		expect(manifest.capabilities).toEqual(["redirects:read", "redirects:write"]);
+		expect(manifest.declaredAccess).toEqual({
+			redirects: { read: {}, write: {} },
+		});
+	});
+
 	it("emits plain hook names when metadata is at defaults", () => {
 		const manifest = extractManifest(
 			minimalResolved({

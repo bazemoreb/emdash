@@ -383,6 +383,8 @@ export const CAPABILITY_LABELS: Record<string, MessageDescriptor> = {
 	"content:read": msg`Read your content`,
 	"content:write": msg`Create, update, and delete content`,
 	"taxonomies:read": msg`Read your taxonomies and terms`,
+	"redirects:read": msg`Read redirect rules`,
+	"redirects:write": msg`Change where visitors are sent`,
 	"media:read": msg`Access your media library`,
 	"media:write": msg`Upload and manage media`,
 	"users:read": msg`Read user accounts`,

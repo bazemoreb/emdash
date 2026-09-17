@@ -53,6 +53,7 @@ async function runMigrations(db: Kysely<any>) {
 		.createTable("options")
 		.addColumn("name", "text", (col) => col.primaryKey())
 		.addColumn("value", "text", (col) => col.notNull())
+		.addColumn("revision", "text", (col) => col.notNull().defaultTo("0"))
 		.execute();
 
 	await db.schema
@@ -106,6 +107,23 @@ async function runMigrations(db: Kysely<any>) {
 		.addColumn("storage_key", "text", (col) => col.notNull())
 		.addColumn("status", "text", (col) => col.notNull().defaultTo("pending"))
 		.addColumn("created_at", "text", (col) => col.notNull())
+		.execute();
+
+	await db.schema
+		.createTable("_emdash_redirects")
+		.addColumn("id", "text", (col) => col.primaryKey())
+		.addColumn("source", "text", (col) => col.notNull())
+		.addColumn("destination", "text", (col) => col.notNull())
+		.addColumn("type", "integer", (col) => col.notNull())
+		.addColumn("is_pattern", "integer", (col) => col.notNull())
+		.addColumn("enabled", "integer", (col) => col.notNull())
+		.addColumn("hits", "integer", (col) => col.notNull())
+		.addColumn("last_hit_at", "text")
+		.addColumn("group_name", "text")
+		.addColumn("auto", "integer", (col) => col.notNull())
+		.addColumn("config_revision", "text", (col) => col.notNull())
+		.addColumn("created_at", "text", (col) => col.notNull())
+		.addColumn("updated_at", "text", (col) => col.notNull())
 		.execute();
 
 	// Content table for posts (created by SchemaRegistry in real code)
@@ -226,6 +244,52 @@ describe("Plugin integration: sandboxed-test plugin operations", () => {
 		// Verify deleted
 		const afterDelete = await call(handler, "kv/get", { key: "sandbox-test-key" });
 		expect(afterDelete.result).toBeNull();
+	});
+
+	it("redirect operations preserve version conflicts and host-owned markers", async () => {
+		const handler = createBridgeHandler({
+			pluginId: "redirect-plugin",
+			version: "1.0.0",
+			capabilities: ["redirects:write", "redirects:read"],
+			allowedHosts: [],
+			storageCollections: [],
+			db,
+			emailSend: () => null,
+		});
+		const created = await call(handler, "redirect/create", {
+			input: { source: "/legacy", destination: "/current" },
+		});
+		const versioned = (created.result as { value: { redirect: { id: string }; _rev: string } })
+			.value;
+
+		const updated = await call(handler, "redirect/update", {
+			id: versioned.redirect.id,
+			input: { destination: "/latest", _rev: versioned._rev },
+		});
+		expect(updated.result).toMatchObject({
+			ok: true,
+			value: { redirect: { destination: "/latest", auto: false } },
+		});
+
+		const stale = await call(handler, "redirect/update", {
+			id: versioned.redirect.id,
+			input: { destination: "/lost", _rev: versioned._rev },
+		});
+		expect(stale.result).toMatchObject({ ok: false, error: { code: "CONFLICT" } });
+
+		const forged = await call(handler, "redirect/create", {
+			input: { source: "/forged", destination: "/target", auto: true },
+		});
+		expect(forged.result).toMatchObject({
+			ok: false,
+			error: { code: "VALIDATION_ERROR" },
+		});
+	});
+
+	it("denies redirect reads without redirects:read", async () => {
+		const handler = makePluginHandler();
+		const result = await call(handler, "redirect/list");
+		expect(result.error).toContain("redirects:read");
 	});
 
 	// ── Mirrors sandboxed-test plugin's storage/test route ───────────────

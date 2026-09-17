@@ -365,6 +365,13 @@ describe("RedirectRepository", () => {
 			const again = await repo.findById(redirect.id);
 			expect(again!.hits).toBe(2);
 		});
+
+		it("does not change the configuration revision", async () => {
+			const redirect = await repo.create({ source: "/a", destination: "/b" });
+			const before = await repo.findConfigRevision(redirect.id);
+			await repo.recordHit(redirect.id);
+			expect(await repo.findConfigRevision(redirect.id)).toBe(before);
+		});
 	});
 
 	// --- Auto-redirects -----------------------------------------------------
@@ -442,12 +449,16 @@ describe("RedirectRepository", () => {
 			// First rename: A -> B
 			await repo.createAutoRedirect("posts", "title-a", "title-b", "id1", "/blog/{slug}");
 
+			const before = await repo.findBySource("/blog/title-a");
+			const beforeRevision = await repo.findConfigRevision(before!.id);
+
 			// Second rename: B -> C (should update A's destination to C)
 			await repo.createAutoRedirect("posts", "title-b", "title-c", "id1", "/blog/{slug}");
 
 			// Check that the A -> B redirect now points to C
 			const aRedirect = await repo.findBySource("/blog/title-a");
 			expect(aRedirect!.destination).toBe("/blog/title-c");
+			expect(await repo.findConfigRevision(aRedirect!.id)).not.toBe(beforeRevision);
 
 			// And B -> C also exists
 			const bRedirect = await repo.findBySource("/blog/title-b");

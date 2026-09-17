@@ -41,6 +41,14 @@ function mockPlugin(overrides: Partial<ResolvedPlugin> = {}): ResolvedPlugin {
 }
 
 describe("extractManifest", () => {
+	it("serializes redirect write with its read implication", () => {
+		const manifest = extractManifest(mockPlugin({ capabilities: ["redirects:write"] }));
+		expect(manifest.capabilities).toEqual(["redirects:read", "redirects:write"]);
+		expect(manifest.declaredAccess).toEqual({
+			redirects: { read: {}, write: {} },
+		});
+	});
+
 	it("converts hooks from handler objects to name array", () => {
 		const plugin = mockPlugin({
 			hooks: {

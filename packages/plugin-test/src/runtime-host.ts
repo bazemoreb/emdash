@@ -1,6 +1,6 @@
 import { createDialect } from "@emdash-cms/cloudflare/db/d1";
 import { CloudflareSandboxRunner } from "@emdash-cms/cloudflare/sandbox";
-import { pluginManifestSchema } from "@emdash-cms/plugin-types";
+import { pluginManifestSchema, reconcileManifestAccess } from "@emdash-cms/plugin-types";
 import { reset } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import {
@@ -14,6 +14,8 @@ import {
 	type Database,
 	type I18nConfig,
 	type PluginManifest,
+	type RedirectInfo,
+	type RedirectStatus,
 	type SandboxOptions,
 	type Storage,
 } from "emdash";
@@ -70,6 +72,14 @@ export interface PluginRuntimeTestHost {
 			role?: "subscriber" | "contributor" | "author" | "editor" | "admin";
 		}): Promise<UserInfo>;
 		content(collection: string, input: Omit<CreateContentInput, "type">): Promise<ContentItem>;
+		redirect(input: {
+			source: string;
+			destination?: string;
+			type?: RedirectStatus;
+			enabled?: boolean;
+			groupName?: string | null;
+			auto?: boolean;
+		}): Promise<RedirectInfo>;
 		plugin: {
 			setting(key: string, value: unknown): Promise<void>;
 			kv(key: string, value: unknown): Promise<void>;
@@ -132,6 +142,7 @@ export interface PluginRuntimeTestHost {
 		scheduledTasks(): Promise<Array<Record<string, unknown>>>;
 		media(id: string): ReturnType<EmDashRuntime["handleMediaGet"]>;
 		comments(): Promise<Array<Record<string, unknown>>>;
+		redirects(): Promise<RedirectInfo[]>;
 		email(): Promise<Array<Record<string, unknown>>>;
 	};
 	scheduled: {
@@ -224,6 +235,20 @@ function bindings(): RuntimeBindings {
 	return value;
 }
 
+function redirectStatus(value: number): RedirectStatus {
+	switch (value) {
+		case 301:
+		case 302:
+		case 307:
+		case 308:
+		case 410:
+		case 451:
+			return value;
+		default:
+			throw new Error(`Invalid stored redirect status: ${value}`);
+	}
+}
+
 export async function createPluginRuntimeTestHost(
 	options: PluginRuntimeTestHostOptions = {},
 ): Promise<PluginRuntimeTestHost> {
@@ -231,7 +256,7 @@ export async function createPluginRuntimeTestHost(
 	const parsed = pluginManifestSchema.safeParse(JSON.parse(bound.EMDASH_PLUGIN_MANIFEST));
 	if (!parsed.success) throw new Error("EmDash plugin test manifest is invalid");
 	// eslint-disable-next-line typescript/no-unsafe-type-assertion -- the shared wire schema validates the manifest before it crosses into core's equivalent runtime type
-	const manifest = parsed.data as unknown as PluginManifest;
+	const manifest = reconcileManifestAccess(parsed.data) as unknown as PluginManifest;
 	const db = new Kysely<Database>({
 		dialect: createDialect({ binding: "DB", session: "disabled" }),
 	});
@@ -411,6 +436,45 @@ export async function createPluginRuntimeTestHost(
 				assertActive();
 				return new ContentRepository(runtime.db).create({ ...input, type: collection });
 			},
+			async redirect(input) {
+				assertActive();
+				const id = crypto.randomUUID();
+				const now = new Date().toISOString();
+				const configRevision = crypto.randomUUID();
+				const redirect: RedirectInfo = {
+					id,
+					source: input.source,
+					destination: input.destination ?? "",
+					type: input.type ?? 301,
+					isPattern: input.source.includes("["),
+					enabled: input.enabled ?? true,
+					hits: 0,
+					lastHitAt: null,
+					groupName: input.groupName ?? null,
+					auto: input.auto ?? false,
+					createdAt: now,
+					updatedAt: now,
+				};
+				await runtime.db
+					.insertInto("_emdash_redirects")
+					.values({
+						id,
+						source: redirect.source,
+						destination: redirect.destination,
+						type: redirect.type,
+						is_pattern: redirect.isPattern ? 1 : 0,
+						enabled: redirect.enabled ? 1 : 0,
+						hits: 0,
+						last_hit_at: null,
+						group_name: redirect.groupName,
+						auto: redirect.auto ? 1 : 0,
+						config_revision: configRevision,
+						created_at: now,
+						updated_at: now,
+					})
+					.execute();
+				return redirect;
+			},
 			plugin: {
 				setting: (key, value) => optionRepo.set(`plugin:${manifest.id}:settings:${key}`, value),
 				async storage(collection, id, value) {
@@ -550,6 +614,30 @@ export async function createPluginRuntimeTestHost(
 					"SELECT id, collection, content_id AS contentId, body, status FROM _emdash_comments ORDER BY created_at ASC",
 				).all();
 				return rows.results ?? [];
+			},
+			async redirects() {
+				const rows = await runtime.db
+					.selectFrom("_emdash_redirects")
+					.selectAll()
+					.orderBy("created_at", "asc")
+					.orderBy("id", "asc")
+					.execute();
+				return rows.map(
+					(row): RedirectInfo => ({
+						id: row.id,
+						source: row.source,
+						destination: row.destination,
+						type: redirectStatus(row.type),
+						isPattern: row.is_pattern === 1,
+						enabled: row.enabled === 1,
+						hits: row.hits,
+						lastHitAt: row.last_hit_at,
+						groupName: row.group_name,
+						auto: row.auto === 1,
+						createdAt: row.created_at,
+						updatedAt: row.updated_at,
+					}),
+				);
 			},
 			email: async () => capturedEmail.map((message) => ({ ...message })),
 		},

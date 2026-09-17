@@ -725,6 +725,7 @@ export interface RedirectTable {
 	last_hit_at: string | null;
 	group_name: string | null;
 	auto: number; // boolean: system-generated from slug change
+	config_revision: string;
 	created_at: string;
 	updated_at: string;
 }

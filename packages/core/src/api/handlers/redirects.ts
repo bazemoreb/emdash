@@ -14,6 +14,7 @@ import {
 import { InvalidCursorError } from "../../database/repositories/types.js";
 import type { FindManyResult } from "../../database/repositories/types.js";
 import type { Database } from "../../database/types.js";
+import { invalidateRedirectCache } from "../../redirects/cache.js";
 import { wouldCreateLoop, detectLoops, type RedirectEdge } from "../../redirects/loops.js";
 import { validatePattern, validateDestinationParams, isPattern } from "../../redirects/patterns.js";
 import { isTerminalStatus } from "../../redirects/status.js";
@@ -149,6 +150,7 @@ export async function handleRedirectCreate(
 			enabled: input.enabled ?? true,
 			groupName: input.groupName ?? null,
 		});
+		invalidateRedirectCache();
 
 		return { success: true, data: redirect };
 	} catch {
@@ -199,6 +201,7 @@ export async function handleRedirectUpdate(
 		enabled?: boolean;
 		groupName?: string | null;
 	},
+	options?: { expectedRevision?: string },
 ): Promise<ApiResult<Redirect>> {
 	try {
 		const repo = new RedirectRepository(db);
@@ -211,11 +214,32 @@ export async function handleRedirectUpdate(
 			};
 		}
 
+		if (options?.expectedRevision !== undefined) {
+			const currentRevision = await repo.findConfigRevision(id);
+			if (currentRevision !== options.expectedRevision) {
+				return {
+					success: false,
+					error: { code: "CONFLICT", message: "Redirect changed since it was read" },
+				};
+			}
+		}
+
 		const newSource = input.source ?? existing.source;
-		const newDest = input.destination ?? existing.destination;
+		const newType = input.type ?? existing.type;
+		const terminal = isTerminalStatus(newType);
+		const newDest = terminal ? "" : (input.destination ?? existing.destination);
+		if (!terminal && !newDest) {
+			return {
+				success: false,
+				error: {
+					code: "VALIDATION_ERROR",
+					message: "destination is required for redirect types (301, 302, 307, 308)",
+				},
+			};
+		}
 
 		// Source and destination must differ
-		if (newSource === newDest) {
+		if (!terminal && newSource === newDest) {
 			return {
 				success: false,
 				error: {
@@ -256,7 +280,7 @@ export async function handleRedirectUpdate(
 
 		// Validate destination params against the (possibly updated) source
 		const newSourceIsPattern = isPattern(newSource);
-		if (newSourceIsPattern) {
+		if (newSourceIsPattern && !terminal) {
 			const destError = validateDestinationParams(newSource, newDest);
 			if (destError) {
 				return {
@@ -267,29 +291,44 @@ export async function handleRedirectUpdate(
 		}
 
 		// Check for redirect loops if source or destination changed
-		if (input.source !== undefined || input.destination !== undefined) {
+		const willBeEnabled = input.enabled ?? existing.enabled;
+		if (
+			!terminal &&
+			willBeEnabled &&
+			(input.source !== undefined ||
+				input.destination !== undefined ||
+				input.type !== undefined ||
+				input.enabled !== undefined)
+		) {
 			const edges = toEdges(await repo.findAllEnabled());
 			const loopPath = wouldCreateLoop(newSource, newDest, edges, id);
 			if (loopPath) return loopError(loopPath);
 		}
 
-		const updated = await repo.update(id, {
-			source: input.source,
-			destination: input.destination,
-			type: input.type,
-			enabled: input.enabled,
-			groupName: input.groupName,
-		});
+		const updated = await repo.update(
+			id,
+			{
+				source: input.source,
+				destination: terminal ? "" : input.destination,
+				type: input.type,
+				enabled: input.enabled,
+				groupName: input.groupName,
+			},
+			options?.expectedRevision,
+		);
 
 		if (!updated) {
 			return {
 				success: false,
-				error: { code: "REDIRECT_UPDATE_ERROR", message: "Failed to update redirect" },
+				error: options?.expectedRevision
+					? { code: "CONFLICT", message: "Redirect changed since it was read" }
+					: { code: "REDIRECT_UPDATE_ERROR", message: "Failed to update redirect" },
 			};
 		}
 
 		// Recompute cache — redirect was modified, so re-fetch
 		await updateLoopCache(db);
+		invalidateRedirectCache();
 
 		return { success: true, data: updated };
 	} catch {
@@ -306,19 +345,39 @@ export async function handleRedirectUpdate(
 export async function handleRedirectDelete(
 	db: Kysely<Database>,
 	id: string,
+	options?: { expectedRevision?: string },
 ): Promise<ApiResult<{ deleted: true }>> {
 	try {
 		const repo = new RedirectRepository(db);
-		const deleted = await repo.delete(id);
+		if (options?.expectedRevision !== undefined) {
+			const existing = await repo.findById(id);
+			if (!existing) {
+				return {
+					success: false,
+					error: { code: "NOT_FOUND", message: `Redirect "${id}" not found` },
+				};
+			}
+			const currentRevision = await repo.findConfigRevision(id);
+			if (currentRevision !== options.expectedRevision) {
+				return {
+					success: false,
+					error: { code: "CONFLICT", message: "Redirect changed since it was read" },
+				};
+			}
+		}
+		const deleted = await repo.delete(id, options?.expectedRevision);
 
 		if (!deleted) {
 			return {
 				success: false,
-				error: { code: "NOT_FOUND", message: `Redirect "${id}" not found` },
+				error: options?.expectedRevision
+					? { code: "CONFLICT", message: "Redirect changed since it was read" }
+					: { code: "NOT_FOUND", message: `Redirect "${id}" not found` },
 			};
 		}
 
 		await updateLoopCache(db);
+		invalidateRedirectCache();
 
 		return { success: true, data: { deleted: true } };
 	} catch {

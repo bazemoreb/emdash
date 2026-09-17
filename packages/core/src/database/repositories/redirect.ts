@@ -148,6 +148,15 @@ export class RedirectRepository {
 		return row ? rowToRedirect(row) : null;
 	}
 
+	async findConfigRevision(id: string): Promise<string | null> {
+		const row = await this.db
+			.selectFrom("_emdash_redirects")
+			.select("config_revision")
+			.where("id", "=", id)
+			.executeTakeFirst();
+		return row?.config_revision ?? null;
+	}
+
 	async findMany(opts: {
 		cursor?: string;
 		limit?: number;
@@ -230,6 +239,7 @@ export class RedirectRepository {
 				last_hit_at: null,
 				group_name: input.groupName ?? null,
 				auto: input.auto ? 1 : 0,
+				config_revision: ulid(),
 				created_at: now,
 				updated_at: now,
 			})
@@ -238,12 +248,18 @@ export class RedirectRepository {
 		return (await this.findById(id))!;
 	}
 
-	async update(id: string, input: UpdateRedirectInput): Promise<Redirect | null> {
+	async update(
+		id: string,
+		input: UpdateRedirectInput,
+		expectedRevision?: string,
+	): Promise<Redirect | null> {
 		const existing = await this.findById(id);
 		if (!existing) return null;
 
-		const now = new Date().toISOString();
-		const values: Record<string, unknown> = { updated_at: now };
+		const now = new Date(
+			Math.max(Date.now(), new Date(existing.updatedAt).getTime() + 1),
+		).toISOString();
+		const values: Record<string, unknown> = { updated_at: now, config_revision: ulid() };
 
 		if (input.source !== undefined) {
 			values.source = input.source;
@@ -258,16 +274,22 @@ export class RedirectRepository {
 		if (input.enabled !== undefined) values.enabled = input.enabled ? 1 : 0;
 		if (input.groupName !== undefined) values.group_name = input.groupName;
 
-		await this.db.updateTable("_emdash_redirects").set(values).where("id", "=", id).execute();
+		let query = this.db.updateTable("_emdash_redirects").set(values).where("id", "=", id);
+		if (expectedRevision !== undefined) {
+			query = query.where("config_revision", "=", expectedRevision);
+		}
+		const result = await query.executeTakeFirst();
+		if (BigInt(result.numUpdatedRows) === 0n) return null;
 
 		return (await this.findById(id))!;
 	}
 
-	async delete(id: string): Promise<boolean> {
-		const result = await this.db
-			.deleteFrom("_emdash_redirects")
-			.where("id", "=", id)
-			.executeTakeFirst();
+	async delete(id: string, expectedRevision?: string): Promise<boolean> {
+		let query = this.db.deleteFrom("_emdash_redirects").where("id", "=", id);
+		if (expectedRevision !== undefined) {
+			query = query.where("config_revision", "=", expectedRevision);
+		}
+		const result = await query.executeTakeFirst();
 		return BigInt(result.numDeletedRows) > 0n;
 	}
 
@@ -417,6 +439,7 @@ export class RedirectRepository {
 			.set({
 				destination: newDestination,
 				updated_at: new Date().toISOString(),
+				config_revision: ulid(),
 			})
 			.where("destination", "=", oldDestination)
 			.executeTakeFirst();

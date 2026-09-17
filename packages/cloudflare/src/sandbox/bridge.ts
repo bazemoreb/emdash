@@ -16,18 +16,26 @@ import type {
 	CronTaskInfo,
 	Database,
 	I18nConfig,
+	PaginatedResult,
+	RedirectCreateInput,
+	RedirectInfo,
+	RedirectListOptions,
+	RedirectUpdateInput,
 	SandboxEmailSendCallback,
+	VersionedRedirect,
 	VersionedValue,
 } from "emdash";
 import {
 	ContentRepository,
 	CronAccessImpl,
 	createContentAccess,
+	createRedirectAccess,
 	createSandboxRouteError,
 	getSandboxRouteErrorDetails,
 	ulid,
 	OptionsRepository,
 	PluginStorageRepository,
+	RedirectAccessError,
 	StorageSerializationError,
 	resolveContentCreateLocale,
 } from "emdash";
@@ -35,7 +43,7 @@ import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
 
 import { sandboxHttpFetch } from "./bridge-http.js";
-import type { StorageUpdateIfResponse } from "./types.js";
+import type { RedirectBridgeResult, StorageUpdateIfResponse } from "./types.js";
 
 /** Regex to validate collection names (prevent SQL injection) */
 const COLLECTION_NAME_REGEX = /^[a-z][a-z0-9_]*$/;
@@ -189,6 +197,17 @@ function rowToTaxonomyTerm(row: Record<string, unknown>): {
 		locale: columnString(row.locale),
 		translationGroup: columnNullableString(row.translation_group),
 	};
+}
+
+async function redirectBridgeResult<T>(action: () => Promise<T>): Promise<RedirectBridgeResult<T>> {
+	try {
+		return { ok: true, value: await action() };
+	} catch (error) {
+		if (error instanceof RedirectAccessError) {
+			return { ok: false, error: { code: error.code, message: error.message } };
+		}
+		throw error;
+	}
 }
 
 /**
@@ -884,6 +903,64 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 			.bind(...params)
 			.all();
 		return (results.results ?? []).map(rowToTaxonomyTerm);
+	}
+
+	// =========================================================================
+	// Redirect Operations - runtime-owned, capability-gated
+	// =========================================================================
+
+	async redirectList(
+		options: RedirectListOptions = {},
+	): Promise<RedirectBridgeResult<PaginatedResult<RedirectInfo>>> {
+		const { capabilities } = this.ctx.props;
+		if (!capabilities.includes("redirects:read")) {
+			throw new Error("Missing capability: redirects:read");
+		}
+		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
+		return redirectBridgeResult(() => createRedirectAccess(db).list(options));
+	}
+
+	async redirectGet(id: string): Promise<RedirectBridgeResult<VersionedRedirect | null>> {
+		const { capabilities } = this.ctx.props;
+		if (!capabilities.includes("redirects:read")) {
+			throw new Error("Missing capability: redirects:read");
+		}
+		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
+		return redirectBridgeResult(() => createRedirectAccess(db).get(id));
+	}
+
+	async redirectCreate(
+		input: RedirectCreateInput,
+	): Promise<RedirectBridgeResult<VersionedRedirect>> {
+		const { capabilities } = this.ctx.props;
+		if (!capabilities.includes("redirects:write")) {
+			throw new Error("Missing capability: redirects:write");
+		}
+		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
+		return redirectBridgeResult(() => createRedirectAccess(db, true).create(input));
+	}
+
+	async redirectUpdate(
+		id: string,
+		input: RedirectUpdateInput & { _rev: string },
+	): Promise<RedirectBridgeResult<VersionedRedirect>> {
+		const { capabilities } = this.ctx.props;
+		if (!capabilities.includes("redirects:write")) {
+			throw new Error("Missing capability: redirects:write");
+		}
+		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
+		return redirectBridgeResult(() => createRedirectAccess(db, true).update(id, input));
+	}
+
+	async redirectDelete(id: string, revision: string): Promise<RedirectBridgeResult<boolean>> {
+		const { capabilities } = this.ctx.props;
+		if (!capabilities.includes("redirects:write")) {
+			throw new Error("Missing capability: redirects:write");
+		}
+		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
+		return redirectBridgeResult(() =>
+			createRedirectAccess(db, true).delete(id, { _rev: revision }),
+		);
 	}
 
 	// =========================================================================

@@ -29,6 +29,8 @@ export {
 	createStorageAccess,
 	createContentAccess,
 	createContentAccessWithWrite,
+	createRedirectAccess,
+	RedirectAccessError,
 	createMediaAccess,
 	createMediaAccessWithWrite,
 	createHttpAccess,
@@ -148,6 +150,14 @@ export type {
 	TaxonomyDefInfo,
 	TaxonomyTermInfo,
 	TaxonomyReadOptions,
+	RedirectAccess,
+	RedirectAccessWithWrite,
+	RedirectCreateInput,
+	RedirectInfo,
+	RedirectListOptions,
+	RedirectStatus,
+	RedirectUpdateInput,
+	VersionedRedirect,
 
 	// Hook types
 	PluginHooks,

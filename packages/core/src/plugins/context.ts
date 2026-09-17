@@ -8,11 +8,20 @@
 import type { Kysely } from "kysely";
 import { ulid } from "ulidx";
 
+import {
+	handleRedirectCreate,
+	handleRedirectDelete,
+	handleRedirectGet,
+	handleRedirectList,
+	handleRedirectUpdate,
+} from "../api/handlers/redirects.js";
+import { createRedirectBody, updateRedirectBody } from "../api/schemas/redirects.js";
 import { ContentRepository } from "../database/repositories/content.js";
 import { EntryLockRepository } from "../database/repositories/entry-locks.js";
 import { MediaRepository } from "../database/repositories/media.js";
 import { OptionsRepository } from "../database/repositories/options.js";
 import { PluginStorageRepository } from "../database/repositories/plugin-storage.js";
+import { RedirectRepository, type Redirect } from "../database/repositories/redirect.js";
 import { SeoRepository } from "../database/repositories/seo.js";
 import { TaxonomyRepository, type Taxonomy } from "../database/repositories/taxonomy.js";
 import { UserRepository } from "../database/repositories/user.js";
@@ -61,6 +70,14 @@ import type {
 	TaxonomyDefInfo,
 	TaxonomyTermInfo,
 	TaxonomyReadOptions,
+	RedirectAccess,
+	RedirectAccessWithWrite,
+	RedirectCreateInput,
+	RedirectInfo,
+	RedirectListOptions,
+	RedirectStatus,
+	RedirectUpdateInput,
+	VersionedRedirect,
 } from "./types.js";
 
 // =============================================================================
@@ -374,6 +391,154 @@ export function createTaxonomyAccess(db: Kysely<Database>): TaxonomyAccess {
 				options?.locale,
 			);
 			return terms.map(taxonomyToTermInfo);
+		},
+	};
+}
+
+export class RedirectAccessError extends Error {
+	override readonly name = "RedirectAccessError";
+
+	constructor(
+		readonly code: string,
+		message: string,
+	) {
+		super(message);
+	}
+}
+
+const REDIRECT_REVISION_PREFIX = "r1.";
+const BASE64_PADDING_RE = /=+$/;
+
+function encodeRedirectRevision(id: string, revision: string): string {
+	const payload = `${id}\0${revision}`;
+	return `${REDIRECT_REVISION_PREFIX}${btoa(payload)
+		.replaceAll("+", "-")
+		.replaceAll("/", "_")
+		.replace(BASE64_PADDING_RE, "")}`;
+}
+
+function decodeRedirectRevision(id: string, revision: string): string {
+	if (typeof revision !== "string" || !revision.startsWith(REDIRECT_REVISION_PREFIX)) {
+		throw new RedirectAccessError("INVALID_PRECONDITION", "Invalid redirect revision");
+	}
+	try {
+		const encoded = revision
+			.slice(REDIRECT_REVISION_PREFIX.length)
+			.replaceAll("-", "+")
+			.replaceAll("_", "/");
+		const padded = encoded.padEnd(Math.ceil(encoded.length / 4) * 4, "=");
+		const [revisionId, updatedAt, extra] = atob(padded).split("\0");
+		if (revisionId !== id || !updatedAt || extra !== undefined) throw new Error("invalid");
+		return updatedAt;
+	} catch (error) {
+		if (error instanceof RedirectAccessError) throw error;
+		throw new RedirectAccessError("INVALID_PRECONDITION", "Invalid redirect revision");
+	}
+}
+
+function toRedirectInfo(redirect: Redirect): RedirectInfo {
+	return {
+		...redirect,
+		type: redirect.type as RedirectStatus,
+	};
+}
+
+async function toVersionedRedirect(
+	repo: RedirectRepository,
+	redirect: Redirect,
+): Promise<VersionedRedirect> {
+	const revision = await repo.findConfigRevision(redirect.id);
+	if (revision === null) {
+		throw new RedirectAccessError("NOT_FOUND", `Redirect "${redirect.id}" not found`);
+	}
+	return {
+		redirect: toRedirectInfo(redirect),
+		_rev: encodeRedirectRevision(redirect.id, revision),
+	};
+}
+
+function throwRedirectResult(error: { code: string; message: string }): never {
+	throw new RedirectAccessError(error.code, error.message);
+}
+
+function assertNoAutomaticRedirectMarker(input: object): void {
+	if (typeof input !== "object" || input === null || Array.isArray(input)) {
+		throw new RedirectAccessError("VALIDATION_ERROR", "Redirect input must be an object");
+	}
+	if (Object.hasOwn(input, "auto")) {
+		throw new RedirectAccessError(
+			"VALIDATION_ERROR",
+			"The automatic redirect marker is managed by EmDash",
+		);
+	}
+}
+
+export function createRedirectAccess(db: Kysely<Database>): RedirectAccess;
+export function createRedirectAccess(db: Kysely<Database>, writable: true): RedirectAccessWithWrite;
+export function createRedirectAccess(
+	db: Kysely<Database>,
+	writable = false,
+): RedirectAccess | RedirectAccessWithWrite {
+	const repo = new RedirectRepository(db);
+	const readAccess: RedirectAccess = {
+		async list(options: RedirectListOptions = {}) {
+			const result = await handleRedirectList(db, options);
+			if (!result.success) return throwRedirectResult(result.error);
+			return {
+				items: result.data.items.map(toRedirectInfo),
+				cursor: result.data.nextCursor,
+				hasMore: result.data.nextCursor !== undefined,
+			};
+		},
+		async get(id: string) {
+			const result = await handleRedirectGet(db, id);
+			if (!result.success) {
+				if (result.error.code === "NOT_FOUND") return null;
+				return throwRedirectResult(result.error);
+			}
+			return toVersionedRedirect(repo, result.data);
+		},
+	};
+	if (!writable) return readAccess;
+
+	return {
+		...readAccess,
+		async create(input: RedirectCreateInput) {
+			assertNoAutomaticRedirectMarker(input);
+			const parsed = createRedirectBody.safeParse(input);
+			if (!parsed.success) {
+				throw new RedirectAccessError(
+					"VALIDATION_ERROR",
+					parsed.error.issues[0]?.message ?? "Invalid redirect",
+				);
+			}
+			const result = await handleRedirectCreate(db, parsed.data);
+			if (!result.success) return throwRedirectResult(result.error);
+			return toVersionedRedirect(repo, result.data);
+		},
+		async update(id: string, input: RedirectUpdateInput & { _rev: string }) {
+			assertNoAutomaticRedirectMarker(input);
+			const { _rev, ...patch } = input;
+			const expectedRevision = decodeRedirectRevision(id, _rev);
+			const parsed = updateRedirectBody.safeParse(patch);
+			if (!parsed.success) {
+				throw new RedirectAccessError(
+					"VALIDATION_ERROR",
+					parsed.error.issues[0]?.message ?? "Invalid redirect",
+				);
+			}
+			const result = await handleRedirectUpdate(db, id, parsed.data, { expectedRevision });
+			if (!result.success) return throwRedirectResult(result.error);
+			return toVersionedRedirect(repo, result.data);
+		},
+		async delete(id: string, options: { _rev: string }) {
+			if (typeof options !== "object" || options === null) {
+				throw new RedirectAccessError("INVALID_PRECONDITION", "Invalid redirect revision");
+			}
+			const expectedRevision = decodeRedirectRevision(id, options._rev);
+			const result = await handleRedirectDelete(db, id, { expectedRevision });
+			if (!result.success) return throwRedirectResult(result.error);
+			return result.data.deleted;
 		},
 	};
 }
@@ -1159,6 +1324,13 @@ export class PluginContextFactory {
 			taxonomies = createTaxonomyAccess(db);
 		}
 
+		let redirects: RedirectAccess | RedirectAccessWithWrite | undefined;
+		if (capabilities.has("redirects:write")) {
+			redirects = createRedirectAccess(db, true);
+		} else if (capabilities.has("redirects:read")) {
+			redirects = createRedirectAccess(db);
+		}
+
 		// Capability-gated: media
 		// `upload()` only needs `storage`; `getUploadUrl()` is derived from
 		// storage when no explicit provider is wired. Granting write access on
@@ -1223,6 +1395,7 @@ export class PluginContextFactory {
 			kv,
 			content,
 			taxonomies,
+			redirects,
 			media,
 			http,
 			log,

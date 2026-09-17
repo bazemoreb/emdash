@@ -71,6 +71,12 @@ const _declaredAccessSchema = /*#__PURE__*/ v.object({
 		return /*#__PURE__*/ v.optional(pageAccessSchema);
 	},
 	/**
+	 * Access to visitor redirect rules.
+	 */
+	get redirects() {
+		return /*#__PURE__*/ v.optional(redirectsAccessSchema);
+	},
+	/**
 	 * Access to taxonomy definitions and terms.
 	 */
 	get taxonomies() {
@@ -275,6 +281,39 @@ const _provenanceSchema = /*#__PURE__*/ v.object({
 		/*#__PURE__*/ v.stringLength(0, 2048),
 	]),
 });
+const _redirectsAccessSchema = /*#__PURE__*/ v.object({
+	$type: /*#__PURE__*/ v.optional(
+		/*#__PURE__*/ v.literal(
+			"com.emdashcms.experimental.package.releaseExtension#redirectsAccess",
+		),
+	),
+	/**
+	 * Plugin may read redirect rules.
+	 */
+	get read() {
+		return /*#__PURE__*/ v.optional(redirectsReadConstraintsSchema);
+	},
+	/**
+	 * Plugin may create, update, or delete redirect rules and change where visitors are sent. Implies `read`.
+	 */
+	get write() {
+		return /*#__PURE__*/ v.optional(redirectsWriteConstraintsSchema);
+	},
+});
+const _redirectsReadConstraintsSchema = /*#__PURE__*/ v.object({
+	$type: /*#__PURE__*/ v.optional(
+		/*#__PURE__*/ v.literal(
+			"com.emdashcms.experimental.package.releaseExtension#redirectsReadConstraints",
+		),
+	),
+});
+const _redirectsWriteConstraintsSchema = /*#__PURE__*/ v.object({
+	$type: /*#__PURE__*/ v.optional(
+		/*#__PURE__*/ v.literal(
+			"com.emdashcms.experimental.package.releaseExtension#redirectsWriteConstraints",
+		),
+	),
+});
 const _taxonomiesAccessSchema = /*#__PURE__*/ v.object({
 	$type: /*#__PURE__*/ v.optional(
 		/*#__PURE__*/ v.literal(
@@ -336,6 +375,11 @@ type pageAccess$schematype = typeof _pageAccessSchema;
 type pageFragmentsConstraints$schematype =
 	typeof _pageFragmentsConstraintsSchema;
 type provenance$schematype = typeof _provenanceSchema;
+type redirectsAccess$schematype = typeof _redirectsAccessSchema;
+type redirectsReadConstraints$schematype =
+	typeof _redirectsReadConstraintsSchema;
+type redirectsWriteConstraints$schematype =
+	typeof _redirectsWriteConstraintsSchema;
 type taxonomiesAccess$schematype = typeof _taxonomiesAccessSchema;
 type taxonomiesReadConstraints$schematype =
 	typeof _taxonomiesReadConstraintsSchema;
@@ -359,6 +403,9 @@ export interface networkRequestConstraintsSchema extends networkRequestConstrain
 export interface pageAccessSchema extends pageAccess$schematype {}
 export interface pageFragmentsConstraintsSchema extends pageFragmentsConstraints$schematype {}
 export interface provenanceSchema extends provenance$schematype {}
+export interface redirectsAccessSchema extends redirectsAccess$schematype {}
+export interface redirectsReadConstraintsSchema extends redirectsReadConstraints$schematype {}
+export interface redirectsWriteConstraintsSchema extends redirectsWriteConstraints$schematype {}
 export interface taxonomiesAccessSchema extends taxonomiesAccess$schematype {}
 export interface taxonomiesReadConstraintsSchema extends taxonomiesReadConstraints$schematype {}
 export interface usersAccessSchema extends usersAccess$schematype {}
@@ -391,6 +438,12 @@ export const pageAccessSchema = _pageAccessSchema as pageAccessSchema;
 export const pageFragmentsConstraintsSchema =
 	_pageFragmentsConstraintsSchema as pageFragmentsConstraintsSchema;
 export const provenanceSchema = _provenanceSchema as provenanceSchema;
+export const redirectsAccessSchema =
+	_redirectsAccessSchema as redirectsAccessSchema;
+export const redirectsReadConstraintsSchema =
+	_redirectsReadConstraintsSchema as redirectsReadConstraintsSchema;
+export const redirectsWriteConstraintsSchema =
+	_redirectsWriteConstraintsSchema as redirectsWriteConstraintsSchema;
 export const taxonomiesAccessSchema =
 	_taxonomiesAccessSchema as taxonomiesAccessSchema;
 export const taxonomiesReadConstraintsSchema =
@@ -440,6 +493,15 @@ export interface PageFragmentsConstraints extends v.InferInput<
 	typeof pageFragmentsConstraintsSchema
 > {}
 export interface Provenance extends v.InferInput<typeof provenanceSchema> {}
+export interface RedirectsAccess extends v.InferInput<
+	typeof redirectsAccessSchema
+> {}
+export interface RedirectsReadConstraints extends v.InferInput<
+	typeof redirectsReadConstraintsSchema
+> {}
+export interface RedirectsWriteConstraints extends v.InferInput<
+	typeof redirectsWriteConstraintsSchema
+> {}
 export interface TaxonomiesAccess extends v.InferInput<
 	typeof taxonomiesAccessSchema
 > {}
