@@ -41,6 +41,9 @@ export const PUT: APIRoute = async ({ params, request, locals }) => {
 			return unwrapResult(existing);
 		}
 		const previousStatus = existing.data.status;
+		if (!emdash.handleCommentModerate) {
+			return apiError("COMMENT_MODERATION_UNAVAILABLE", "Comment moderation is unavailable", 500);
+		}
 
 		const updated = await emdash.handleCommentModerate(
 			id,

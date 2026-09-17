@@ -255,7 +255,7 @@ export interface HandlerResponse<T = unknown> {
  */
 export interface EmDashHandlers {
 	// Comment administration
-	handleCommentModerate: (
+	handleCommentModerate?: (
 		id: string,
 		status: "pending" | "approved" | "spam" | "trash",
 		moderator: { id: string; name: string | null },
