@@ -1161,7 +1161,7 @@ async function contentDeleteMany(
 	});
 }
 
-// ── Taxonomy Operations (read-only) ──────────────────────────────────────
+// ── Taxonomy Operations ──
 
 /** Type guard for plain JSON objects. */
 function isJsonObject(value: unknown): value is Record<string, unknown> {
