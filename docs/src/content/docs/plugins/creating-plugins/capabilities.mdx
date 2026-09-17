@@ -32,6 +32,7 @@ Declare only what the plugin actually needs. The registry shows these capabiliti
 | `content:read`                      | `ctx.content.get()`, `ctx.content.list()`                                         |
 | `content:write`                     | `ctx.content.create()`, `ctx.content.update()`, `ctx.content.delete()` (implies `content:read`) |
 | `taxonomies:read`                   | `ctx.taxonomies.getAll()`, `ctx.taxonomies.getTerms()`, `ctx.taxonomies.getEntryTerms()` |
+| `taxonomies:write`                  | `ctx.taxonomies.createTerm()`, `ctx.taxonomies.addEntryTerms()`, `ctx.taxonomies.removeEntryTerms()` (implies `taxonomies:read`) |
 | `media:read`                        | `ctx.media.get()`, `ctx.media.list()`                                             |
 | `media:write`                       | `ctx.media.getUploadUrl()`, `ctx.media.upload()`, `ctx.media.delete()` (implies `media:read`) |
 | `network:request`                   | `ctx.http.fetch()` — restricted to `allowedHosts`                                 |
@@ -44,8 +45,8 @@ Declare only what the plugin actually needs. The registry shows these capabiliti
 
 The following rules affect which capabilities a plugin needs:
 
-- **Implications.** `content:write` automatically implies `content:read`; `media:write` implies `media:read`; `network:request:unrestricted` implies `network:request`. You don't need to list both.
-- **Taxonomies are a separate, read-only surface.** `taxonomies:read` grants access to taxonomy definitions, their terms, and the terms assigned to an entry via `ctx.taxonomies`. It is independent of `content:read` — declare both if the plugin reads content *and* its classification. There is no taxonomy *write* access from plugins.
+- **Implications.** `content:write` automatically implies `content:read`; `taxonomies:write` implies `taxonomies:read`; `media:write` implies `media:read`; `network:request:unrestricted` implies `network:request`. You don't need to list both.
+- **Taxonomies are separate from content.** Taxonomy capabilities do not grant `content:read` or `content:write`. Declare the matching content capability if the plugin also reads or edits entry fields.
 - **`network:request:unrestricted` exists for user-configured URLs.** A webhook plugin where the operator types in the destination URL needs to reach hosts that aren't in the manifest. Plugins that always call known APIs should use `network:request` + `allowedHosts`.
 - **`email:send` is gated by configuration, not just the capability.** A plugin can declare `email:send`, but `ctx.email` will only be populated if some other plugin has registered an `email:deliver` transport.
 
@@ -62,6 +63,26 @@ const post = await ctx.content.create(
 ```
 
 Locale matching is case-insensitive and stores the casing from the site's locale configuration, so `zh-tw` becomes `zh-TW` when that is the configured form. A malformed explicit locale always throws; when i18n is configured, an explicit locale outside the configured locale list also throws. When the option is omitted, EmDash uses the site's configured default locale; sites without i18n configuration retain the `en` default.
+
+### Creating and assigning taxonomy terms
+
+`taxonomies:write` lets a plugin create terms and apply assignment deltas. Pass term row IDs or translation-group IDs. Term slugs are not accepted because they are scoped by taxonomy and locale.
+
+The following example creates a child category and assigns it without replacing the entry's other categories:
+
+```ts
+const releaseNotes = await ctx.taxonomies!.createTerm!("category", {
+	label: "Release notes",
+	parentId: productUpdatesId,
+	locale: "en",
+});
+
+await ctx.taxonomies!.addEntryTerms!("posts", postId, "category", [releaseNotes.id]);
+```
+
+`addEntryTerms()` and `removeEntryTerms()` are idempotent set deltas. Concurrent additions preserve every assignment. EmDash verifies that the taxonomy is attached to the collection, the entry exists, and each term belongs to the named taxonomy. Creating a translated term with `translationOf` joins the source term's translation group; the source must belong to the same taxonomy, and the group can contain only one term per locale.
+
+Taxonomy definition creation, collection attachment, replacement, term updates, and term deletion are not available through `taxonomies:write`.
 
 ## Network host allowlists
 

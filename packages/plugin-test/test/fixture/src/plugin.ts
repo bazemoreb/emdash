@@ -76,6 +76,63 @@ const plugin: SandboxedPlugin = {
 				return { count: result.items.length };
 			},
 		},
+		"taxonomy-create": {
+			handler: async (route, ctx) => {
+				if (
+					typeof route.input !== "object" ||
+					route.input === null ||
+					!("taxonomy" in route.input) ||
+					typeof route.input.taxonomy !== "string" ||
+					!("label" in route.input) ||
+					typeof route.input.label !== "string"
+				) {
+					throw new Error("Expected taxonomy and label");
+				}
+				return ctx.taxonomies!.createTerm!(route.input.taxonomy, { label: route.input.label });
+			},
+		},
+		"taxonomy-add": {
+			handler: async (route, ctx) => {
+				if (
+					typeof route.input !== "object" ||
+					route.input === null ||
+					!("entryId" in route.input) ||
+					typeof route.input.entryId !== "string" ||
+					!("termIds" in route.input) ||
+					!Array.isArray(route.input.termIds) ||
+					!route.input.termIds.every((id) => typeof id === "string")
+				) {
+					throw new Error("Expected entryId and termIds");
+				}
+				return ctx.taxonomies!.addEntryTerms!(
+					"posts",
+					route.input.entryId,
+					"category",
+					route.input.termIds,
+				);
+			},
+		},
+		"taxonomy-remove": {
+			handler: async (route, ctx) => {
+				if (
+					typeof route.input !== "object" ||
+					route.input === null ||
+					!("entryId" in route.input) ||
+					typeof route.input.entryId !== "string" ||
+					!("termIds" in route.input) ||
+					!Array.isArray(route.input.termIds) ||
+					!route.input.termIds.every((id) => typeof id === "string")
+				) {
+					throw new Error("Expected entryId and termIds");
+				}
+				return ctx.taxonomies!.removeEntryTerms!(
+					"posts",
+					route.input.entryId,
+					"category",
+					route.input.termIds,
+				);
+			},
+		},
 		"settings-value": {
 			handler: async (_route, ctx) => ({
 				enabled: await ctx.kv.get("settings:enabled"),

@@ -21,7 +21,7 @@ vi.mock("cloudflare:workers", () => ({
 	},
 }));
 
-import { PluginBridge } from "../../src/sandbox/bridge.js";
+import { PluginBridge, setTaxonomyWriteCallback } from "../../src/sandbox/bridge.js";
 
 type Row = Record<string, unknown>;
 
@@ -93,6 +93,44 @@ describe("PluginBridge taxonomy methods — capability enforcement", () => {
 		await expect(bridge.taxonomyList()).rejects.toThrow(/taxonomies:read/);
 		await expect(bridge.taxonomyTerms("category")).rejects.toThrow(/taxonomies:read/);
 		await expect(bridge.taxonomyEntryTerms("posts", "p1")).rejects.toThrow(/taxonomies:read/);
+	});
+
+	it("routes writes through the runtime callback and denies read-only plugins", async () => {
+		const createTerm = vi.fn(async () => ({
+			id: "term-2",
+			taxonomy: "category",
+			slug: "reviews",
+			label: "Reviews",
+			parentId: null,
+			data: null,
+			locale: "en",
+			translationGroup: "term-2",
+		}));
+		const addEntryTerms = vi.fn(async () => []);
+		const removeEntryTerms = vi.fn(async () => []);
+		setTaxonomyWriteCallback({
+			getAll: vi.fn(async () => []),
+			getTerms: vi.fn(async () => []),
+			getEntryTerms: vi.fn(async () => []),
+			createTerm,
+			addEntryTerms,
+			removeEntryTerms,
+		});
+
+		const reader = makeBridge(["taxonomies:read"]).bridge;
+		await expect(reader.taxonomyCreateTerm("category", { label: "Reviews" })).rejects.toThrow(
+			/taxonomies:write/,
+		);
+
+		const writer = makeBridge(["taxonomies:read", "taxonomies:write"]).bridge;
+		await writer.taxonomyCreateTerm("category", { label: "Reviews" });
+		await writer.taxonomyAddEntryTerms("posts", "post-1", "category", ["term-2"]);
+		await writer.taxonomyRemoveEntryTerms("posts", "post-1", "category", ["term-2"]);
+
+		expect(createTerm).toHaveBeenCalledWith("category", { label: "Reviews" });
+		expect(addEntryTerms).toHaveBeenCalledWith("posts", "post-1", "category", ["term-2"]);
+		expect(removeEntryTerms).toHaveBeenCalledWith("posts", "post-1", "category", ["term-2"]);
+		setTaxonomyWriteCallback(null);
 	});
 });
 

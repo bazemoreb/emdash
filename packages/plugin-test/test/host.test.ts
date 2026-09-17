@@ -92,6 +92,64 @@ describe("runtime plugin test host", () => {
 		});
 	});
 
+	it("runs taxonomy mutations through the host dispatcher and Worker Loader bridge", async () => {
+		runtimeHost = await createPluginRuntimeTestHost({
+			i18n: { defaultLocale: "en", locales: ["en", "fr"] },
+		});
+		await runtimeHost.fixtures.collection({
+			slug: "posts",
+			label: "Posts",
+			fields: [{ slug: "title", label: "Title", type: "string" }],
+		});
+		await runtimeHost.fixtures.taxonomy({
+			name: "category",
+			label: "Categories",
+			labelSingular: "Category",
+			hierarchical: true,
+			collections: ["posts"],
+		});
+		const news = await runtimeHost.fixtures.taxonomyTerm("category", {
+			label: "News",
+			slug: "news",
+		});
+		const reviews = await runtimeHost.fixtures.taxonomyTerm("category", {
+			label: "Reviews",
+			slug: "reviews",
+		});
+		const content = await runtimeHost.fixtures.content("posts", { data: { title: "Post" } });
+		const admin = await runtimeHost.fixtures.user({ email: "taxonomy@example.com", role: "admin" });
+		const request = (name: string, body: unknown) =>
+			runtimeHost!.actions.routes.request(name, {
+				user: admin,
+				headers: { "X-EmDash-Request": "1" },
+				body,
+			});
+
+		const [first, second] = await Promise.all([
+			request("taxonomy-add", { entryId: content.id, termIds: [news.id] }),
+			request("taxonomy-add", { entryId: content.id, termIds: [reviews.id] }),
+		]);
+		expect(first.status).toBe(200);
+		expect(second.status).toBe(200);
+		await expect(
+			runtimeHost.inspect.taxonomyEntryTerms("posts", content.id, "category", "en"),
+		).resolves.toMatchObject([{ id: news.id }, { id: reviews.id }]);
+
+		const created = await request("taxonomy-create", { taxonomy: "category", label: "Guides" });
+		expect(created.status).toBe(200);
+		expect(await created.json()).toMatchObject({ data: { slug: "guides", taxonomy: "category" } });
+
+		expect(
+			(await request("taxonomy-remove", { entryId: content.id, termIds: [news.id] })).status,
+		).toBe(200);
+		expect(
+			(await request("taxonomy-remove", { entryId: content.id, termIds: [news.id] })).status,
+		).toBe(200);
+		await expect(
+			runtimeHost.inspect.taxonomyEntryTerms("posts", content.id, "category", "en"),
+		).resolves.toMatchObject([{ id: reviews.id }]);
+	});
+
 	it("uses the production route dispatcher for authorization, CSRF, and cache policy", async () => {
 		runtimeHost = await createPluginRuntimeTestHost();
 		const publicResponse = await runtimeHost.actions.routes.request("isolate-id", {

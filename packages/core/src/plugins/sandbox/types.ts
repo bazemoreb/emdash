@@ -10,7 +10,7 @@
 import type { Kysely } from "kysely";
 
 import type { Database } from "../../database/types.js";
-import type { PluginManifest, RequestMeta, UserInfo } from "../types.js";
+import type { PluginManifest, RequestMeta, TaxonomyAccessWithWrite, UserInfo } from "../types.js";
 
 /**
  * Resource limits for sandboxed plugins.
@@ -71,6 +71,8 @@ export interface SandboxOptions {
 	db: Kysely<Database>;
 	/** Called immediately before a sandboxed plugin content mutation. */
 	beforeContentWrite?: () => Promise<void>;
+	/** Runtime-owned taxonomy mutation surface used by sandbox bridges. */
+	taxonomyWrite?: TaxonomyAccessWithWrite;
 	/** Clock used to calculate recurring plugin task schedules. */
 	now?: () => Date;
 	/** Default resource limits */

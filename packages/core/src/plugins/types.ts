@@ -406,6 +406,15 @@ export interface TaxonomyReadOptions {
 	locale?: string;
 }
 
+export interface TaxonomyTermCreateInput {
+	label: string;
+	slug?: string;
+	parentId?: string | null;
+	description?: string;
+	locale?: string;
+	translationOf?: string;
+}
+
 /**
  * Content access interface - capability-gated
  */
@@ -426,7 +435,6 @@ export interface ContentAccess {
 
 /**
  * Taxonomy access interface — capability-gated on `taxonomies:read`.
- * Read-only: there is no plugin-facing taxonomy write API.
  */
 export interface TaxonomyAccess {
 	/** List taxonomy definitions. */
@@ -438,6 +446,36 @@ export interface TaxonomyAccess {
 		collection: string,
 		entryId: string,
 		options?: TaxonomyReadOptions & { taxonomy?: string },
+	): Promise<TaxonomyTermInfo[]>;
+	createTerm?(taxonomy: string, input: TaxonomyTermCreateInput): Promise<TaxonomyTermInfo>;
+	addEntryTerms?(
+		collection: string,
+		entryId: string,
+		taxonomy: string,
+		termIds: string[],
+	): Promise<TaxonomyTermInfo[]>;
+	removeEntryTerms?(
+		collection: string,
+		entryId: string,
+		taxonomy: string,
+		termIds: string[],
+	): Promise<TaxonomyTermInfo[]>;
+}
+
+/** Taxonomy mutations available with `taxonomies:write`. */
+export interface TaxonomyAccessWithWrite extends TaxonomyAccess {
+	createTerm(taxonomy: string, input: TaxonomyTermCreateInput): Promise<TaxonomyTermInfo>;
+	addEntryTerms(
+		collection: string,
+		entryId: string,
+		taxonomy: string,
+		termIds: string[],
+	): Promise<TaxonomyTermInfo[]>;
+	removeEntryTerms(
+		collection: string,
+		entryId: string,
+		taxonomy: string,
+		termIds: string[],
 	): Promise<TaxonomyTermInfo[]>;
 }
 
@@ -608,8 +646,8 @@ export interface PluginContext<TStorage extends PluginStorageConfig = PluginStor
 	/** Content access - only if read:content or write:content capability */
 	content?: ContentAccess | ContentAccessWithWrite;
 
-	/** Taxonomy access (read-only) - only if taxonomies:read capability */
-	taxonomies?: TaxonomyAccess;
+	/** Taxonomy access - only if a taxonomy capability is declared. */
+	taxonomies?: TaxonomyAccess | TaxonomyAccessWithWrite;
 
 	/** Media access - only if read:media or write:media capability */
 	media?: MediaAccess | MediaAccessWithWrite;

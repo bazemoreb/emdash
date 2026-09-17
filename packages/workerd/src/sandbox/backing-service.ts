@@ -75,6 +75,7 @@ export function createBackingServiceHandler(runner: WorkerdSandboxRunner): Backi
 					i18nConfig: getI18nConfig(),
 					db: runner.db,
 					beforeContentWrite: runner.beforeContentWrite,
+					taxonomyWrite: runner.taxonomyWrite,
 					emailSend: () => runner.emailSend,
 					cronReschedule: () => runner.cronReschedule?.(),
 					now: runner.now,

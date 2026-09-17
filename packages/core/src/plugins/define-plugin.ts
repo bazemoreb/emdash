@@ -158,6 +158,7 @@ function defineNativePlugin<TStorage extends PluginStorageConfig>(
 		"content:read",
 		"content:write",
 		"taxonomies:read",
+		"taxonomies:write",
 		"media:read",
 		"media:write",
 		"users:read",
@@ -195,6 +196,9 @@ function defineNativePlugin<TStorage extends PluginStorageConfig>(
 	const normalizedCapabilities: PluginCapability[] = [...canonical];
 	if (canonical.includes("content:write") && !canonical.includes("content:read")) {
 		normalizedCapabilities.push("content:read");
+	}
+	if (canonical.includes("taxonomies:write") && !canonical.includes("taxonomies:read")) {
+		normalizedCapabilities.push("taxonomies:read");
 	}
 	if (canonical.includes("media:write") && !canonical.includes("media:read")) {
 		normalizedCapabilities.push("media:read");

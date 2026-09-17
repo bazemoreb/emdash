@@ -920,6 +920,10 @@ export class WorkerdSandboxRunner implements SandboxRunner {
 		return this.options.beforeContentWrite;
 	}
 
+	get taxonomyWrite() {
+		return this.options.taxonomyWrite;
+	}
+
 	/** Get the email send callback */
 	get emailSend() {
 		return this.emailSendCallback;

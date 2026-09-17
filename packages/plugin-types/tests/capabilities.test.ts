@@ -8,6 +8,7 @@ import {
 	normalizeCapabilities,
 	normalizeCapability,
 	pluginManifestSchema,
+	reconcileManifestAccess,
 } from "../src/index.js";
 
 describe("isDeprecatedCapability", () => {
@@ -95,6 +96,24 @@ describe("declaredAccess facet mapping", () => {
 				admin: {},
 			}).success,
 		).toBe(true);
+		const writer = pluginManifestSchema.safeParse({
+			id: "taxonomy-writer",
+			version: "1.0.0",
+			declaredAccess: { taxonomies: { read: {}, write: {} } },
+			capabilities: ["taxonomies:read", "taxonomies:write"],
+			allowedHosts: [],
+			storage: {},
+			hooks: [],
+			routes: [],
+			admin: {},
+		});
+		expect(writer.success).toBe(true);
+		if (!writer.success) return;
+		expect(writer.data.declaredAccess?.taxonomies?.write).toEqual({});
+		expect(reconcileManifestAccess(writer.data).capabilities).toEqual([
+			"taxonomies:read",
+			"taxonomies:write",
+		]);
 	});
 
 	it("maps each hook-registration capability to its participation facet", () => {
@@ -111,6 +130,13 @@ describe("declaredAccess facet mapping", () => {
 		expect(capabilitiesToDeclaredAccess(["taxonomies:read"], [])).toEqual({
 			taxonomies: { read: {} },
 		});
+		expect(capabilitiesToDeclaredAccess(["taxonomies:write"], [])).toEqual({
+			taxonomies: { read: {}, write: {} },
+		});
+		expect(declaredAccessToCapabilities({ taxonomies: { write: {} } }).capabilities).toEqual([
+			"taxonomies:write",
+			"taxonomies:read",
+		]);
 	});
 
 	it("distinguishes host-restricted from unrestricted network", () => {
@@ -160,6 +186,7 @@ describe("declaredAccess <-> capabilities round-trip (total over the vocabulary)
 	// always equals the capability set the runtime enforces.
 	const contentChoices = [[], ["content:read"], ["content:read", "content:write"]];
 	const mediaChoices = [[], ["media:read"], ["media:read", "media:write"]];
+	const taxonomyChoices = [[], ["taxonomies:read"], ["taxonomies:read", "taxonomies:write"]];
 	const networkChoices: { caps: string[]; hosts: string[] }[] = [
 		{ caps: [], hosts: [] },
 		{ caps: ["network:request", "network:request:unrestricted"], hosts: [] },
@@ -175,19 +202,20 @@ describe("declaredAccess <-> capabilities round-trip (total over the vocabulary)
 		"hooks.email-transport:register",
 		"hooks.page-fragments:register",
 		"users:read",
-		"taxonomies:read",
 	];
 
 	function* states() {
 		for (const content of contentChoices) {
 			for (const media of mediaChoices) {
-				for (const network of networkChoices) {
-					for (let mask = 0; mask < 1 << singletonFacets.length; mask++) {
-						const extra = singletonFacets.filter((_, i) => mask & (1 << i));
-						yield {
-							capabilities: [...content, ...media, ...network.caps, ...extra],
-							allowedHosts: network.hosts,
-						};
+				for (const taxonomies of taxonomyChoices) {
+					for (const network of networkChoices) {
+						for (let mask = 0; mask < 1 << singletonFacets.length; mask++) {
+							const extra = singletonFacets.filter((_, i) => mask & (1 << i));
+							yield {
+								capabilities: [...content, ...media, ...taxonomies, ...network.caps, ...extra],
+								allowedHosts: network.hosts,
+							};
+						}
 					}
 				}
 			}
@@ -204,7 +232,7 @@ describe("declaredAccess <-> capabilities round-trip (total over the vocabulary)
 			expect(new Set(back.allowedHosts)).toEqual(new Set(input.allowedHosts));
 			count++;
 		}
-		// 3 content x 3 media x 5 network x 2^6 singleton subsets.
-		expect(count).toBe(2880);
+		// 3 content x 3 media x 3 taxonomy x 5 network x 2^5 singleton subsets.
+		expect(count).toBe(4320);
 	});
 });

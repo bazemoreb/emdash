@@ -224,6 +224,17 @@ describe("definePlugin", () => {
 			expect(plugin.capabilities).toContain("content:read");
 		});
 
+		it("normalizes taxonomies:write to include taxonomies:read", () => {
+			const plugin = definePlugin({
+				id: "test",
+				version: "1.0.0",
+				capabilities: ["taxonomies:write"],
+			});
+
+			expect(plugin.capabilities).toContain("taxonomies:write");
+			expect(plugin.capabilities).toContain("taxonomies:read");
+		});
+
 		it("normalizes media:write to include media:read", () => {
 			const plugin = definePlugin({
 				id: "test",

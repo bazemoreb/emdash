@@ -17,6 +17,7 @@ import type {
 	Database,
 	I18nConfig,
 	SandboxEmailSendCallback,
+	TaxonomyAccessWithWrite,
 	VersionedValue,
 } from "emdash";
 import {
@@ -74,6 +75,7 @@ const FILE_EXT_REGEX = /^\.[a-z0-9]{1,10}$/i;
 let emailSendCallback: SandboxEmailSendCallback | null = null;
 let cronRescheduleCallback: (() => void) | null = null;
 let cronNowCallback: (() => Date) | null = null;
+let taxonomyWriteCallback: TaxonomyAccessWithWrite | null = null;
 
 /**
  * Set the email send callback for all bridge instances.
@@ -89,6 +91,10 @@ export function setCronRescheduleCallback(callback: (() => void) | null): void {
 
 export function setCronNowCallback(callback: (() => Date) | null): void {
 	cronNowCallback = callback;
+}
+
+export function setTaxonomyWriteCallback(callback: TaxonomyAccessWithWrite | null): void {
+	taxonomyWriteCallback = callback;
 }
 
 function serializeValue(value: unknown): unknown {
@@ -773,7 +779,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 	}
 
 	// =========================================================================
-	// Taxonomy Operations (read-only) - gated on taxonomies:read
+	// Taxonomy Operations - capability-gated
 	// =========================================================================
 
 	async taxonomyList(opts: { locale?: string } = {}): Promise<
@@ -884,6 +890,41 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 			.bind(...params)
 			.all();
 		return (results.results ?? []).map(rowToTaxonomyTerm);
+	}
+
+	async taxonomyCreateTerm(
+		taxonomy: string,
+		input: Parameters<TaxonomyAccessWithWrite["createTerm"]>[1],
+	) {
+		this.assertTaxonomyWriteAllowed();
+		return taxonomyWriteCallback!.createTerm(taxonomy, input);
+	}
+
+	async taxonomyAddEntryTerms(
+		collection: string,
+		entryId: string,
+		taxonomy: string,
+		termIds: string[],
+	) {
+		this.assertTaxonomyWriteAllowed();
+		return taxonomyWriteCallback!.addEntryTerms(collection, entryId, taxonomy, termIds);
+	}
+
+	async taxonomyRemoveEntryTerms(
+		collection: string,
+		entryId: string,
+		taxonomy: string,
+		termIds: string[],
+	) {
+		this.assertTaxonomyWriteAllowed();
+		return taxonomyWriteCallback!.removeEntryTerms(collection, entryId, taxonomy, termIds);
+	}
+
+	private assertTaxonomyWriteAllowed(): void {
+		if (!this.ctx.props.capabilities.includes("taxonomies:write")) {
+			throw new Error("Missing capability: taxonomies:write");
+		}
+		if (!taxonomyWriteCallback) throw new Error("Taxonomy mutations are not available");
 	}
 
 	// =========================================================================

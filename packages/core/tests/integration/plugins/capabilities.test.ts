@@ -20,6 +20,7 @@ import {
 	createContentAccess,
 	createContentAccessWithWrite,
 	createTaxonomyAccess,
+	createTaxonomyAccessWithWrite,
 	createHttpAccess,
 	createUnrestrictedHttpAccess,
 	createBlockedHttpAccess,
@@ -407,6 +408,100 @@ describe("Capability Enforcement Integration (v2)", () => {
 					createTestPlugin({ id: "tax-only", capabilities: ["taxonomies:read"] }),
 				);
 				expect(taxOnly.content).toBeUndefined();
+			});
+
+			it("creates terms and rejects hierarchy on flat taxonomies", async () => {
+				const access = createTaxonomyAccessWithWrite(db);
+				const created = await access.createTerm("genre", {
+					label: "Reviews",
+					parentId: "term-news",
+				});
+
+				expect(created).toMatchObject({
+					taxonomy: "genre",
+					slug: "reviews",
+					parentId: "term-news",
+					locale: "en",
+				});
+				await expect(
+					access.createTerm("topic", { label: "Models", parentId: "term-ai" }),
+				).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+			});
+
+			it("allows only one concurrent translation per term group and locale", async () => {
+				setI18nConfig({ defaultLocale: "en", locales: ["en", "fr"] });
+				const access = createTaxonomyAccessWithWrite(db);
+
+				const results = await Promise.allSettled([
+					access.createTerm("genre", {
+						label: "Sous-actualités",
+						slug: "sous-actualites",
+						locale: "fr",
+						translationOf: "term-sub",
+					}),
+					access.createTerm("genre", {
+						label: "Actualités secondaires",
+						slug: "actualites-secondaires",
+						locale: "fr",
+						translationOf: "term-sub",
+					}),
+				]);
+
+				expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+				expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+				expect(
+					(await access.getTerms("genre", { locale: "fr" })).filter(
+						(term) => term.translationGroup === "term-sub",
+					),
+				).toHaveLength(1);
+			});
+
+			it("applies concurrent assignment additions as set deltas", async () => {
+				await sql`DELETE FROM content_taxonomies`.execute(db);
+				const access = createTaxonomyAccessWithWrite(db);
+
+				await Promise.all([
+					access.addEntryTerms("posts", "post-1", "genre", ["term-news"]),
+					access.addEntryTerms("posts", "post-1", "genre", ["term-sub"]),
+				]);
+
+				const assigned = await access.getEntryTerms("posts", "post-1", {
+					taxonomy: "genre",
+					locale: "en",
+				});
+				expect(assigned.map((term) => term.id).toSorted()).toEqual(["term-news", "term-sub"]);
+			});
+
+			it("removes only named term groups and validates attachment and ownership", async () => {
+				const access = createTaxonomyAccessWithWrite(db);
+				await access.removeEntryTerms("posts", "post-1", "genre", ["term-news-fr"]);
+				expect(
+					(await access.getEntryTerms("posts", "post-1", { locale: "en" })).map((term) => term.id),
+				).toEqual(["term-ai"]);
+
+				await expect(
+					access.addEntryTerms("posts", "post-1", "genre", ["term-ai"]),
+				).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+				await sql`UPDATE _emdash_taxonomy_defs SET collections = '[]' WHERE name = 'genre'`.execute(
+					db,
+				);
+				await expect(
+					access.addEntryTerms("posts", "post-1", "genre", ["term-news"]),
+				).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+			});
+
+			it("exposes taxonomy mutations only with taxonomies:write", () => {
+				const factory = new PluginContextFactory({ db });
+				const reader = factory.createContext(
+					createTestPlugin({ id: "tax-reader", capabilities: ["taxonomies:read"] }),
+				);
+				const writer = factory.createContext(
+					createTestPlugin({ id: "tax-writer", capabilities: ["taxonomies:write"] }),
+				);
+
+				expect(reader.taxonomies?.createTerm).toBeUndefined();
+				expect(writer.taxonomies?.createTerm).toBeTypeOf("function");
+				expect(writer.taxonomies?.getAll).toBeTypeOf("function");
 			});
 		});
 

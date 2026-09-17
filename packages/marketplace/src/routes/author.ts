@@ -258,6 +258,7 @@ const VALID_CAPABILITIES = [
 	"content:read",
 	"content:write",
 	"taxonomies:read",
+	"taxonomies:write",
 	"media:read",
 	"media:write",
 	"users:read",
@@ -278,7 +279,7 @@ const VALID_CAPABILITIES = [
 	"page:inject",
 ] as const;
 
-const createPluginSchema = z.object({
+export const createPluginSchema = z.object({
 	id: z
 		.string()
 		.min(1)

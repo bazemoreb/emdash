@@ -29,6 +29,15 @@ function isTermSlugUniqueViolation(error: unknown): boolean {
 	);
 }
 
+function isTermTranslationLocaleUniqueViolation(error: unknown): boolean {
+	const message = error instanceof Error ? error.message.toLowerCase() : "";
+	return (
+		(message.includes("unique constraint failed") || message.includes("duplicate key")) &&
+		(message.includes("translation_group") ||
+			message.includes("idx_taxonomies_translation_group_locale_unique"))
+	);
+}
+
 // ---------------------------------------------------------------------------
 // Response types
 // ---------------------------------------------------------------------------
@@ -903,6 +912,15 @@ export async function handleTermCreate(
 		// Coerce empty-string parentId to undefined (treat as "no parent").
 		const parentId =
 			input.parentId === "" || input.parentId === undefined ? undefined : input.parentId;
+		if (parentId !== undefined && parentId !== null && lookup.def.hierarchical !== 1) {
+			return {
+				success: false,
+				error: {
+					code: "VALIDATION_ERROR",
+					message: `Taxonomy '${taxonomyName}' is not hierarchical`,
+				},
+			};
+		}
 
 		// Conflict check is scoped to locale (per-locale slugs are unique).
 		const existing =
@@ -928,7 +946,35 @@ export async function handleTermCreate(
 		let selfGroup: string | null = null;
 		if (input.translationOf) {
 			const source = await repo.findById(input.translationOf);
-			selfGroup = source ? (source.translationGroup ?? source.id) : null;
+			if (!source) {
+				return {
+					success: false,
+					error: {
+						code: "VALIDATION_ERROR",
+						message: `Translation source '${input.translationOf}' not found`,
+					},
+				};
+			}
+			if (source.name !== taxonomyName) {
+				return {
+					success: false,
+					error: {
+						code: "VALIDATION_ERROR",
+						message: `Translation source '${input.translationOf}' belongs to taxonomy '${source.name}', not '${taxonomyName}'`,
+					},
+				};
+			}
+			selfGroup = source.translationGroup ?? source.id;
+			const translations = await repo.findTranslations(selfGroup);
+			if (translations.some((translation) => translation.locale === locale)) {
+				return {
+					success: false,
+					error: {
+						code: "CONFLICT",
+						message: `Term translation already exists for locale '${locale}'`,
+					},
+				};
+			}
 		}
 
 		// Validate parentId: must exist AND belong to the same taxonomy.
@@ -991,6 +1037,15 @@ export async function handleTermCreate(
 			},
 		};
 	} catch (error) {
+		if (isTermTranslationLocaleUniqueViolation(error)) {
+			return {
+				success: false,
+				error: {
+					code: "CONFLICT",
+					message: `Term translation already exists for locale '${input.locale ?? getI18nConfig()?.defaultLocale ?? "en"}'`,
+				},
+			};
+		}
 		if (isTermSlugUniqueViolation(error)) {
 			return {
 				success: false,

@@ -16,6 +16,7 @@ import {
 	type PluginManifest,
 	type SandboxOptions,
 	type Storage,
+	type TaxonomyTermInfo,
 } from "emdash";
 import { runMigrations } from "emdash/db";
 import {
@@ -23,6 +24,7 @@ import {
 	EmDashRuntime,
 	getI18nConfig,
 	setI18nConfig,
+	TaxonomyRepository,
 	type UserInfo,
 } from "emdash/plugin-test-runtime";
 import { Kysely } from "kysely";
@@ -70,6 +72,24 @@ export interface PluginRuntimeTestHost {
 			role?: "subscriber" | "contributor" | "author" | "editor" | "admin";
 		}): Promise<UserInfo>;
 		content(collection: string, input: Omit<CreateContentInput, "type">): Promise<ContentItem>;
+		taxonomy(input: {
+			name: string;
+			label: string;
+			labelSingular?: string;
+			hierarchical?: boolean;
+			collections: string[];
+			locale?: string;
+		}): Promise<{ id: string; name: string }>;
+		taxonomyTerm(
+			taxonomy: string,
+			input: {
+				label: string;
+				slug: string;
+				parentId?: string;
+				locale?: string;
+				translationOf?: string;
+			},
+		): Promise<TaxonomyTermInfo>;
 		plugin: {
 			setting(key: string, value: unknown): Promise<void>;
 			kv(key: string, value: unknown): Promise<void>;
@@ -132,6 +152,12 @@ export interface PluginRuntimeTestHost {
 		scheduledTasks(): Promise<Array<Record<string, unknown>>>;
 		media(id: string): ReturnType<EmDashRuntime["handleMediaGet"]>;
 		comments(): Promise<Array<Record<string, unknown>>>;
+		taxonomyEntryTerms(
+			collection: string,
+			entryId: string,
+			taxonomy: string,
+			locale?: string,
+		): Promise<TaxonomyTermInfo[]>;
 		email(): Promise<Array<Record<string, unknown>>>;
 	};
 	scheduled: {
@@ -411,6 +437,53 @@ export async function createPluginRuntimeTestHost(
 				assertActive();
 				return new ContentRepository(runtime.db).create({ ...input, type: collection });
 			},
+			async taxonomy(input) {
+				assertActive();
+				const locale = input.locale ?? "en";
+				const existing = await runtime.db
+					.selectFrom("_emdash_taxonomy_defs")
+					.select("id")
+					.where("name", "=", input.name)
+					.where("locale", "=", locale)
+					.executeTakeFirst();
+				const id = existing?.id ?? crypto.randomUUID();
+				await runtime.db
+					.insertInto("_emdash_taxonomy_defs")
+					.values({
+						id,
+						name: input.name,
+						label: input.label,
+						label_singular: input.labelSingular ?? null,
+						hierarchical: input.hierarchical ? 1 : 0,
+						collections: JSON.stringify(input.collections),
+						locale,
+						translation_group: id,
+					})
+					.onConflict((conflict) =>
+						conflict.columns(["name", "locale"]).doUpdateSet({
+							label: input.label,
+							label_singular: input.labelSingular ?? null,
+							hierarchical: input.hierarchical ? 1 : 0,
+							collections: JSON.stringify(input.collections),
+						}),
+					)
+					.execute();
+				return { id, name: input.name };
+			},
+			async taxonomyTerm(taxonomy, input) {
+				assertActive();
+				const term = await new TaxonomyRepository(runtime.db).create({ name: taxonomy, ...input });
+				return {
+					id: term.id,
+					taxonomy: term.name,
+					slug: term.slug,
+					label: term.label,
+					parentId: term.parentId,
+					data: term.data,
+					locale: term.locale,
+					translationGroup: term.translationGroup,
+				};
+			},
 			plugin: {
 				setting: (key, value) => optionRepo.set(`plugin:${manifest.id}:settings:${key}`, value),
 				async storage(collection, id, value) {
@@ -550,6 +623,24 @@ export async function createPluginRuntimeTestHost(
 					"SELECT id, collection, content_id AS contentId, body, status FROM _emdash_comments ORDER BY created_at ASC",
 				).all();
 				return rows.results ?? [];
+			},
+			async taxonomyEntryTerms(collection, entryId, taxonomy, locale) {
+				const terms = await new TaxonomyRepository(runtime.db).getTermsForEntry(
+					collection,
+					entryId,
+					taxonomy,
+					locale,
+				);
+				return terms.map((term) => ({
+					id: term.id,
+					taxonomy: term.name,
+					slug: term.slug,
+					label: term.label,
+					parentId: term.parentId,
+					data: term.data,
+					locale: term.locale,
+					translationGroup: term.translationGroup,
+				}));
 			},
 			email: async () => capturedEmail.map((message) => ({ ...message })),
 		},

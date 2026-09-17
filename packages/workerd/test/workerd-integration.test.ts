@@ -219,6 +219,22 @@ export default {
 };
 `;
 
+const TAXONOMY_WRITE_PLUGIN = `
+export default {
+	routes: {
+		create: {
+			handler: async (route, ctx) => ctx.taxonomies.createTerm("category", route.input)
+		},
+		add: {
+			handler: async (route, ctx) => ctx.taxonomies.addEntryTerms("posts", route.input.entryId, "category", route.input.termIds)
+		},
+		remove: {
+			handler: async (route, ctx) => ctx.taxonomies.removeEntryTerms("posts", route.input.entryId, "category", route.input.termIds)
+		}
+	}
+};
+`;
+
 describe.skipIf(!workerdAvailable)("WorkerdSandboxRunner integration", () => {
 	let db: Kysely<any>;
 	let sqlite: Database.Database;
@@ -328,6 +344,118 @@ describe.skipIf(!workerdAvailable)("WorkerdSandboxRunner integration", () => {
 			expect(second.success && first.success && second.data.isolateId).not.toBe(
 				first.success ? first.data.isolateId : undefined,
 			);
+		} finally {
+			await runtime.shutdown();
+			await runtime.db.destroy();
+			runtimeSqlite.close();
+		}
+	}, 30_000);
+
+	it("runs runtime-owned taxonomy mutations through a real workerd isolate", async () => {
+		const { EmDashRuntime, TaxonomyRepository } = await import("emdash/plugin-test-runtime");
+		const runtimeSqlite = new Database(":memory:");
+		const deps: RuntimeDependencies = {
+			config: {
+				database: {
+					entrypoint: `workerd-taxonomies-${crypto.randomUUID()}`,
+					type: "sqlite",
+					config: {},
+				},
+			},
+			plugins: [],
+			createDialect: () => new SqliteDialect({ database: runtimeSqlite }),
+			createStorage: null,
+			createScheduler: null,
+			sandboxEnabled: true,
+			sandboxedPluginEntries: [
+				{
+					id: "taxonomy-writer",
+					version: "1.0.0",
+					options: {},
+					code: TAXONOMY_WRITE_PLUGIN,
+					capabilities: ["taxonomies:read", "taxonomies:write"],
+					allowedHosts: [],
+					storage: {},
+					hooks: [],
+					routes: [{ name: "create" }, { name: "add" }, { name: "remove" }],
+				},
+				{
+					id: "taxonomy-reader",
+					version: "1.0.0",
+					options: {},
+					code: TAXONOMY_WRITE_PLUGIN,
+					capabilities: ["taxonomies:read"],
+					allowedHosts: [],
+					storage: {},
+					hooks: [],
+					routes: [{ name: "add" }],
+				},
+			],
+			createSandboxRunner: (options) => new WorkerdSandboxRunner(options),
+		};
+		const runtime = await EmDashRuntime.create(deps);
+		try {
+			await new SchemaRegistry(runtime.db).createCollection({ slug: "posts", label: "Posts" });
+			const content = await runtime.handleContentCreate("posts", { data: {} });
+			if (!content.success) throw new Error(content.error.message);
+			await runtime.db
+				.updateTable("_emdash_taxonomy_defs")
+				.set({ collections: '["posts"]' })
+				.where("name", "in", ["category", "tag"])
+				.execute();
+			const taxonomyRepo = new TaxonomyRepository(runtime.db);
+			const news = await taxonomyRepo.create({
+				name: "category",
+				slug: "news",
+				label: "News",
+				locale: "en",
+			});
+			const unrelated = await taxonomyRepo.create({
+				name: "tag",
+				slug: "ai",
+				label: "AI",
+				locale: "en",
+			});
+			const writer = runtime.sandboxedPlugins.get("taxonomy-writer:1.0.0");
+			const reader = runtime.sandboxedPlugins.get("taxonomy-reader:1.0.0");
+			if (!writer || !reader) throw new Error("Taxonomy workerd isolates were not loaded");
+			const request = { method: "POST", url: "/taxonomy", headers: {} };
+			const created = (await writer.invokeRoute("create", { label: "Reviews" }, request)) as {
+				id: string;
+			};
+			await Promise.all([
+				writer.invokeRoute("add", { entryId: content.data.item.id, termIds: [news.id] }, request),
+				writer.invokeRoute(
+					"add",
+					{ entryId: content.data.item.id, termIds: [created.id] },
+					request,
+				),
+			]);
+			expect(
+				(await taxonomyRepo.getTermsForEntry("posts", content.data.item.id, "category", "en"))
+					.map((term) => term.slug)
+					.toSorted(),
+			).toEqual(["news", "reviews"]);
+			await expect(
+				writer.invokeRoute(
+					"add",
+					{ entryId: content.data.item.id, termIds: [unrelated.id] },
+					request,
+				),
+			).rejects.toThrow("belongs to 'tag'");
+			await expect(
+				reader.invokeRoute("add", { entryId: content.data.item.id, termIds: [news.id] }, request),
+			).rejects.toThrow("Missing capability: taxonomies:write");
+			await writer.invokeRoute(
+				"remove",
+				{ entryId: content.data.item.id, termIds: [news.id] },
+				request,
+			);
+			expect(
+				(await taxonomyRepo.getTermsForEntry("posts", content.data.item.id, "category", "en")).map(
+					(term) => term.slug,
+				),
+			).toEqual(["reviews"]);
 		} finally {
 			await runtime.shutdown();
 			await runtime.db.destroy();

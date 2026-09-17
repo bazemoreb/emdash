@@ -86,6 +86,7 @@ Use only canonical capability names:
 | `content:read`                   | `ctx.content.get()`, `ctx.content.list()`                               |
 | `content:write`                  | `ctx.content.create()`, `update()`, `delete()`; implies read            |
 | `taxonomies:read`                | `ctx.taxonomies.getAll()`, `getTerms()`, `getEntryTerms()`              |
+| `taxonomies:write`               | `createTerm()`, `addEntryTerms()`, `removeEntryTerms()`; implies read   |
 | `media:read`                     | `ctx.media.get()`, `ctx.media.list()`                                   |
 | `media:write`                    | `ctx.media.upload()`, `ctx.media.delete()`; implies read                |
 | `network:request`                | `ctx.http.fetch()` restricted to `allowedHosts`                         |
@@ -123,6 +124,8 @@ interface PluginContext {
 ```
 
 Optional properties appear only when the matching capability and host configuration are present.
+
+Taxonomy assignment writes accept term row IDs or translation-group IDs, not term slugs. `addEntryTerms()` and `removeEntryTerms()` apply idempotent deltas, so concurrent additions do not replace one another. The host validates taxonomy attachment, entry existence, term ownership, locale, translations, and hierarchy. Taxonomy-definition management, assignment replacement, term updates, and term deletion are not exposed.
 
 ## Routes and MCP tools
 

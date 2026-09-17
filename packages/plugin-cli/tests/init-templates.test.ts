@@ -330,6 +330,8 @@ describe("agent guidance", () => {
 		expect(skill).toContain("createPluginTestHost()");
 		expect(skill).toContain("createPluginRuntimeTestHost()");
 		expect(skill).toContain("Node/workerd parity opt-in");
+		expect(skill).toContain("pass a taxonomy name and term fields to `createTerm()`");
+		expect(skill).toContain("Pass term IDs to `addEntryTerms()` and `removeEntryTerms()`");
 		expect(skill).toContain("@<publisher-handle>/<slug>");
 		expect(skill).toContain("info <handle> <slug> --version <version> --watch");
 	});

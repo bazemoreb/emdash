@@ -33,6 +33,7 @@ import type {
 	Database,
 	I18nConfig,
 	SandboxEmailSendCallback,
+	TaxonomyAccessWithWrite,
 } from "emdash";
 import type { Kysely } from "kysely";
 
@@ -121,6 +122,7 @@ export interface BridgeHandlerOptions {
 	i18nConfig?: I18nConfig | null;
 	db: Kysely<Database>;
 	beforeContentWrite?: () => Promise<void>;
+	taxonomyWrite?: TaxonomyAccessWithWrite;
 	emailSend: () => SandboxEmailSendCallback | null;
 	cronReschedule?: () => void;
 	now?: () => Date;
@@ -289,7 +291,7 @@ async function dispatch(
 				requireStringArray(body, "ids"),
 			);
 
-		// ── Taxonomies (read-only) ──────────────────────────────────────
+		// ── Taxonomies ──────────────────────────────────────────────────
 		// `taxonomies:read` is a post-rename capability: it has no legacy
 		// alias, so the canonical name is checked directly.
 		case "taxonomy/list":
@@ -306,6 +308,31 @@ async function dispatch(
 				requireString(body, "entryId"),
 				optionalString(body, "taxonomy"),
 				optionalString(body, "locale"),
+			);
+		case "taxonomy/createTerm":
+			requireCapability(opts, "taxonomies:write");
+			if (!opts.taxonomyWrite) throw new Error("Taxonomy mutations are not available");
+			return opts.taxonomyWrite.createTerm(
+				requireString(body, "taxonomy"),
+				requireTaxonomyTermCreateInput(body, "input"),
+			);
+		case "taxonomy/addEntryTerms":
+			requireCapability(opts, "taxonomies:write");
+			if (!opts.taxonomyWrite) throw new Error("Taxonomy mutations are not available");
+			return opts.taxonomyWrite.addEntryTerms(
+				requireString(body, "collection"),
+				requireString(body, "entryId"),
+				requireString(body, "taxonomy"),
+				requireStringArray(body, "termIds"),
+			);
+		case "taxonomy/removeEntryTerms":
+			requireCapability(opts, "taxonomies:write");
+			if (!opts.taxonomyWrite) throw new Error("Taxonomy mutations are not available");
+			return opts.taxonomyWrite.removeEntryTerms(
+				requireString(body, "collection"),
+				requireString(body, "entryId"),
+				requireString(body, "taxonomy"),
+				requireStringArray(body, "termIds"),
 			);
 
 		// ── Media ───────────────────────────────────────────────────────
@@ -613,6 +640,29 @@ function requireEmailMessage(body: Record<string, unknown>, key: string): EmailM
 		throw new Error("email/send requires message with to, subject, and text");
 	}
 	return value;
+}
+
+function requireTaxonomyTermCreateInput(
+	body: Record<string, unknown>,
+	key: string,
+): Parameters<TaxonomyAccessWithWrite["createTerm"]>[1] {
+	const input = requireRecord(body, key);
+	const parentId = input.parentId;
+	if (parentId !== undefined && parentId !== null && typeof parentId !== "string") {
+		throw new Error("Parameter input.parentId must be a string or null");
+	}
+	const slug = optionalString(input, "slug");
+	const description = optionalString(input, "description");
+	const locale = optionalString(input, "locale");
+	const translationOf = optionalString(input, "translationOf");
+	return {
+		label: requireString(input, "label"),
+		...(slug !== undefined ? { slug } : {}),
+		...(parentId !== undefined ? { parentId } : {}),
+		...(description !== undefined ? { description } : {}),
+		...(locale !== undefined ? { locale } : {}),
+		...(translationOf !== undefined ? { translationOf } : {}),
+	};
 }
 
 function requireLogLevel(body: Record<string, unknown>, key: string): LogLevel {

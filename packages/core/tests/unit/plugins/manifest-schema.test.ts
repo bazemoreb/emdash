@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
 	pluginManifestSchema,
 	normalizeManifestRoute,
+	reconcileManifestAccess,
 } from "../../../src/plugins/manifest-schema.js";
 
 /** Minimal valid manifest for testing — only storage fields vary */
@@ -20,6 +21,21 @@ function makeManifest(storage: Record<string, { indexes: Array<string | string[]
 }
 
 describe("pluginManifestSchema — route entries", () => {
+	it("preserves taxonomy write authority during reconciliation", () => {
+		const result = pluginManifestSchema.safeParse({
+			...makeManifest({}),
+			declaredAccess: { taxonomies: { read: {}, write: {} } },
+			capabilities: ["taxonomies:read", "taxonomies:write"],
+		});
+		expect(result.success).toBe(true);
+		if (!result.success) return;
+		expect(result.data.declaredAccess?.taxonomies?.write).toEqual({});
+		expect(reconcileManifestAccess(result.data).capabilities).toEqual([
+			"taxonomies:read",
+			"taxonomies:write",
+		]);
+	});
+
 	it("should accept plain string routes", () => {
 		const result = pluginManifestSchema.safeParse(makeManifest({}));
 		// Baseline with empty routes is valid
