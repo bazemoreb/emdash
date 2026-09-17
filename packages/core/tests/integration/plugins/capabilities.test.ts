@@ -436,7 +436,7 @@ describe("Capability Enforcement Integration (v2)", () => {
 					access.createTerm("genre", {
 						label: "Sous-actualités",
 						slug: "sous-actualites",
-						locale: "fr",
+						locale: "FR",
 						translationOf: "term-sub",
 					}),
 					access.createTerm("genre", {
@@ -449,6 +449,10 @@ describe("Capability Enforcement Integration (v2)", () => {
 
 				expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
 				expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+				const rejected = results.find((result) => result.status === "rejected");
+				expect(rejected?.status === "rejected" ? rejected.reason : null).toMatchObject({
+					message: "Term translation already exists for locale 'fr'",
+				});
 				expect(
 					(await access.getTerms("genre", { locale: "fr" })).filter(
 						(term) => term.translationGroup === "term-sub",

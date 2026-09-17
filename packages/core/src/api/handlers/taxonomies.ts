@@ -899,8 +899,10 @@ export async function handleTermCreate(
 	},
 ): Promise<ApiResult<TermResponse>> {
 	let attemptedSlug = input.slug;
+	let effectiveLocale = input.locale ?? getI18nConfig()?.defaultLocale ?? "en";
 	try {
 		const locale = resolveConfiguredLocale(input.locale ?? getI18nConfig()?.defaultLocale ?? "en");
+		effectiveLocale = locale;
 		// Taxonomy definitions are per-locale, but terms can exist in any locale
 		// regardless of whether the def has been translated there. Look up the
 		// def across all locales — we only care that it *exists*.
@@ -1033,7 +1035,7 @@ export async function handleTermCreate(
 				success: false,
 				error: {
 					code: "CONFLICT",
-					message: `Term translation already exists for locale '${input.locale ?? getI18nConfig()?.defaultLocale ?? "en"}'`,
+					message: `Term translation already exists for locale '${effectiveLocale}'`,
 				},
 			};
 		}
