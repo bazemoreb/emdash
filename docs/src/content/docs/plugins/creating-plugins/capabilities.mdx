@@ -85,7 +85,7 @@ if (current) {
 }
 ```
 
-Create and update operations validate path patterns, terminal `410` and `451` rules, duplicate sources, self-loops, and multi-hop loops with the same rules as the EmDash redirect API. The `auto` marker belongs to redirects created from host content changes; plugin input cannot set it.
+Create operations validate path patterns, terminal `410` and `451` rules, duplicate sources, self-loops, and multi-hop loops with the same rules as the EmDash redirect API. Updates apply loop validation when the source or destination changes. An enabled-only update can reactivate a pre-existing loop, which the Redirects page reports. The `auto` marker belongs to redirects created from host content changes; plugin input cannot set it.
 
 ## Network host allowlists
 

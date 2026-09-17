@@ -318,10 +318,7 @@ export async function handleRedirectUpdate(
 			if (
 				!terminal &&
 				willBeEnabled &&
-				(input.source !== undefined ||
-					input.destination !== undefined ||
-					input.type !== undefined ||
-					input.enabled !== undefined)
+				(input.source !== undefined || input.destination !== undefined)
 			) {
 				const edges = toEdges(await repo.findAllEnabled());
 				const loopPath = wouldCreateLoop(newSource, newDest, edges, id);

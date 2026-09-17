@@ -56,7 +56,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 		.ifNotExists()
 		.addColumn("id", "integer", (column) => column.primaryKey())
 		.addColumn("token", "text", (column) => column.notNull())
-		.addColumn("expires_at", "integer", (column) => column.notNull())
+		.addColumn("expires_at", isPostgres(db) ? "bigint" : "integer", (column) => column.notNull())
 		.addColumn("generation", "integer", (column) => column.notNull())
 		.execute();
 	await sql`
@@ -97,7 +97,9 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 					RAISE EXCEPTION 'pattern redirect writes require the current runtime';
 				END IF;
 
-				IF NEW.enabled = 1 AND NEW.destination <> '' AND EXISTS (
+				IF NEW.enabled = 1 AND NEW.destination <> ''
+					AND (TG_OP = 'INSERT' OR NEW.source <> OLD.source OR NEW.destination <> OLD.destination)
+					AND EXISTS (
 					WITH RECURSIVE chain(source, destination) AS (
 						SELECT source, destination FROM _emdash_redirects
 						WHERE source = NEW.destination AND enabled = 1
@@ -217,7 +219,7 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 		`.execute(db);
 		await sql`
 			CREATE TRIGGER IF NOT EXISTS emdash_redirect_loop_update
-			BEFORE UPDATE OF source, destination, enabled, is_pattern, type, group_name ON _emdash_redirects
+			BEFORE UPDATE OF source, destination ON _emdash_redirects
 			WHEN NEW.enabled = 1 AND NEW.destination <> ''
 			BEGIN
 				SELECT CASE WHEN EXISTS (

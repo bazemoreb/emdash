@@ -148,7 +148,7 @@ With `content:read`, both sandbox runners match the trusted read contract. `ctx.
 
 Declare `redirects:read` to list redirect rules with cursor pagination and read one rule with its opaque `_rev`. Declare `redirects:write` to create, update, or delete rules; it implies read access and authorizes the plugin to change where visitors are sent.
 
-Pass `_rev` back unchanged for `update()` and `delete()`. A stale value fails with `CONFLICT`; re-read the current rule before retrying. The revision tracks redirect configuration, not visitor hit counting. Redirect writes use the host redirect handlers, including path-pattern, destination-parameter, duplicate-source, terminal-status, self-loop, and multi-hop-loop validation. Plugin input cannot set the host-owned `auto` marker.
+Pass `_rev` back unchanged for `update()` and `delete()`. A stale value fails with `CONFLICT`; re-read the current rule before retrying. The revision tracks redirect configuration, not visitor hit counting. Redirect writes use the host redirect handlers, including path-pattern, destination-parameter, duplicate-source, and terminal-status validation. Self-loop and multi-hop-loop validation runs when a rule is created or its source or destination changes. An enabled-only update can reactivate a pre-existing loop, which the Redirects page reports. Plugin input cannot set the host-owned `auto` marker.
 
 ## External HTTP responses
 

@@ -163,7 +163,7 @@ describe("redirect handlers — loop detection", () => {
 			});
 		});
 
-		it("rejects enabling a disabled rule when it closes a loop", async () => {
+		it("preserves enabled-only updates for pre-existing redirect loops", async () => {
 			await handleRedirectCreate(db, { source: "/a", destination: "/b" });
 			const disabled = await handleRedirectCreate(db, {
 				source: "/b",
@@ -173,7 +173,7 @@ describe("redirect handlers — loop detection", () => {
 			if (!disabled.success) throw new Error(disabled.error.message);
 
 			const result = await handleRedirectUpdate(db, disabled.data.id, { enabled: true });
-			expect(result).toMatchObject({ success: false, error: { code: "VALIDATION_ERROR" } });
+			expect(result).toMatchObject({ success: true, data: { enabled: true } });
 		});
 
 		it("uses the expected configuration revision as an atomic mutation precondition", async () => {

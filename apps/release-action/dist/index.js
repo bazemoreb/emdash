@@ -1134,6 +1134,9 @@ var releaseExtension_exports = /* @__PURE__ */ __exportAll({
 	pageAccessSchema: () => pageAccessSchema,
 	pageFragmentsConstraintsSchema: () => pageFragmentsConstraintsSchema,
 	provenanceSchema: () => provenanceSchema,
+	redirectsAccessSchema: () => redirectsAccessSchema,
+	redirectsReadConstraintsSchema: () => redirectsReadConstraintsSchema,
+	redirectsWriteConstraintsSchema: () => redirectsWriteConstraintsSchema,
 	taxonomiesAccessSchema: () => taxonomiesAccessSchema,
 	taxonomiesReadConstraintsSchema: () => taxonomiesReadConstraintsSchema,
 	usersAccessSchema: () => usersAccessSchema,
@@ -1166,6 +1169,9 @@ const _declaredAccessSchema = /* @__PURE__ */ object$1({
 	},
 	get page() {
 		return /* @__PURE__ */ optional$1(pageAccessSchema);
+	},
+	get redirects() {
+		return /* @__PURE__ */ optional$1(redirectsAccessSchema);
 	},
 	get taxonomies() {
 		return /* @__PURE__ */ optional$1(taxonomiesAccessSchema);
@@ -1234,6 +1240,17 @@ const _provenanceSchema = /* @__PURE__ */ object$1({
 	sourceRepository: /* @__PURE__ */ constrain(/* @__PURE__ */ genericUriString(), [/* @__PURE__ */ stringLength(0, 1024)]),
 	url: /* @__PURE__ */ constrain(/* @__PURE__ */ genericUriString(), [/* @__PURE__ */ stringLength(0, 2048)])
 });
+const _redirectsAccessSchema = /* @__PURE__ */ object$1({
+	$type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#redirectsAccess")),
+	get read() {
+		return /* @__PURE__ */ optional$1(redirectsReadConstraintsSchema);
+	},
+	get write() {
+		return /* @__PURE__ */ optional$1(redirectsWriteConstraintsSchema);
+	}
+});
+const _redirectsReadConstraintsSchema = /* @__PURE__ */ object$1({ $type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#redirectsReadConstraints")) });
+const _redirectsWriteConstraintsSchema = /* @__PURE__ */ object$1({ $type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#redirectsWriteConstraints")) });
 const _taxonomiesAccessSchema = /* @__PURE__ */ object$1({
 	$type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#taxonomiesAccess")),
 	get read() {
@@ -1265,6 +1282,9 @@ const networkRequestConstraintsSchema = _networkRequestConstraintsSchema;
 const pageAccessSchema = _pageAccessSchema;
 const pageFragmentsConstraintsSchema = _pageFragmentsConstraintsSchema;
 const provenanceSchema = _provenanceSchema;
+const redirectsAccessSchema = _redirectsAccessSchema;
+const redirectsReadConstraintsSchema = _redirectsReadConstraintsSchema;
+const redirectsWriteConstraintsSchema = _redirectsWriteConstraintsSchema;
 const taxonomiesAccessSchema = _taxonomiesAccessSchema;
 const taxonomiesReadConstraintsSchema = _taxonomiesReadConstraintsSchema;
 const usersAccessSchema = _usersAccessSchema;
@@ -7787,6 +7807,8 @@ const CURRENT_PLUGIN_CAPABILITIES = [
 	"content:read",
 	"content:write",
 	"taxonomies:read",
+	"redirects:read",
+	"redirects:write",
 	"media:read",
 	"media:write",
 	"users:read",
@@ -8003,6 +8025,10 @@ const declaredAccessSchema = object({
 		write: accessConstraints.optional()
 	}).optional(),
 	taxonomies: object({ read: accessConstraints.optional() }).optional(),
+	redirects: object({
+		read: accessConstraints.optional(),
+		write: accessConstraints.optional()
+	}).optional(),
 	media: object({
 		read: accessConstraints.optional(),
 		write: accessConstraints.optional()
@@ -8114,6 +8140,10 @@ function capabilitiesToDeclaredAccess(capabilities, allowedHosts) {
 		if (caps.has("content:write")) out.content.write = {};
 	}
 	if (caps.has("taxonomies:read")) out.taxonomies = { read: {} };
+	if (caps.has("redirects:read") || caps.has("redirects:write")) {
+		out.redirects = { read: {} };
+		if (caps.has("redirects:write")) out.redirects.write = {};
+	}
 	if (caps.has("media:read") || caps.has("media:write")) {
 		out.media = { read: {} };
 		if (caps.has("media:write")) out.media.write = {};
@@ -8143,6 +8173,11 @@ function declaredAccessToCapabilities(declaredAccess) {
 		caps.add("content:read");
 	}
 	if (declaredAccess.taxonomies?.read) caps.add("taxonomies:read");
+	if (declaredAccess.redirects?.read) caps.add("redirects:read");
+	if (declaredAccess.redirects?.write) {
+		caps.add("redirects:write");
+		caps.add("redirects:read");
+	}
 	if (declaredAccess.media?.read) caps.add("media:read");
 	if (declaredAccess.media?.write) {
 		caps.add("media:write");
