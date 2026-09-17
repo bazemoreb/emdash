@@ -322,8 +322,8 @@ export function generateEncryptionKey(): string {
  * Note: `EMDASH_ENCRYPTION_KEY` is **not** consumed here. It's validated
  * separately at runtime startup (see `validateEncryptionKeyAtStartup`) so a
  * malformed key can't take down preview-token verification or comment
- * submission for unrelated visitors. Future plugin-secret encryption code
- * will read it via its own dedicated helper.
+ * submission for unrelated visitors. Plugin-secret encryption reads it
+ * separately through `resolvePluginEncryptionKeys`.
  */
 export async function resolveSecrets(options: ResolveSecretsOptions): Promise<ResolvedSecrets> {
 	const env = options.env ?? readDefaultEnv();
@@ -356,11 +356,10 @@ export async function resolveSecrets(options: ResolveSecretsOptions): Promise<Re
 /**
  * Validate `EMDASH_ENCRYPTION_KEY` once at runtime startup. Logs an
  * operator-facing error if the value is malformed but does **not** throw —
- * the key is currently inert (no consumers), and the follow-up PR that
- * actually uses it will throw at point of use. This way, deployment
- * mistakes surface immediately in startup logs without wedging unrelated
- * request paths in the meantime. Plugin secret-setting operations fail closed
- * at their own boundary when the key is invalid.
+ * plugin secret-setting operations fail closed at their own boundary when
+ * the key is invalid. This way, deployment mistakes surface immediately in
+ * startup logs without wedging unrelated request paths such as preview-token
+ * verification or comment submission.
  *
  * Returns `true` if the key is unset or valid, `false` if it was malformed.
  */

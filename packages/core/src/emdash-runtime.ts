@@ -1291,10 +1291,9 @@ export class EmDashRuntime {
 		};
 
 		// Validate EMDASH_ENCRYPTION_KEY once here so a malformed value
-		// surfaces in startup logs instead of as request-time 500s. The key
-		// itself is not yet consumed (a follow-up PR adds plugin-secret
-		// encryption); validating early just guards against silent
-		// misconfiguration.
+		// surfaces in startup logs. Plugin secret-setting operations re-read
+		// the key and fail closed at their own boundary, so validation here
+		// does not block unrelated request paths.
 		await phase("rt.secrets", "Validate encryption key", () => validateEncryptionKeyAtStartup());
 
 		// FTS verify/repair is deferred off the cold-start hot path.
