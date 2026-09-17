@@ -1136,6 +1136,7 @@ var releaseExtension_exports = /* @__PURE__ */ __exportAll({
 	provenanceSchema: () => provenanceSchema,
 	taxonomiesAccessSchema: () => taxonomiesAccessSchema,
 	taxonomiesReadConstraintsSchema: () => taxonomiesReadConstraintsSchema,
+	taxonomiesWriteConstraintsSchema: () => taxonomiesWriteConstraintsSchema,
 	usersAccessSchema: () => usersAccessSchema,
 	usersReadConstraintsSchema: () => usersReadConstraintsSchema
 });
@@ -1238,9 +1239,13 @@ const _taxonomiesAccessSchema = /* @__PURE__ */ object$1({
 	$type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#taxonomiesAccess")),
 	get read() {
 		return /* @__PURE__ */ optional$1(taxonomiesReadConstraintsSchema);
+	},
+	get write() {
+		return /* @__PURE__ */ optional$1(taxonomiesWriteConstraintsSchema);
 	}
 });
 const _taxonomiesReadConstraintsSchema = /* @__PURE__ */ object$1({ $type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#taxonomiesReadConstraints")) });
+const _taxonomiesWriteConstraintsSchema = /* @__PURE__ */ object$1({ $type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#taxonomiesWriteConstraints")) });
 const _usersAccessSchema = /* @__PURE__ */ object$1({
 	$type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#usersAccess")),
 	get read() {
@@ -1267,6 +1272,7 @@ const pageFragmentsConstraintsSchema = _pageFragmentsConstraintsSchema;
 const provenanceSchema = _provenanceSchema;
 const taxonomiesAccessSchema = _taxonomiesAccessSchema;
 const taxonomiesReadConstraintsSchema = _taxonomiesReadConstraintsSchema;
+const taxonomiesWriteConstraintsSchema = _taxonomiesWriteConstraintsSchema;
 const usersAccessSchema = _usersAccessSchema;
 const usersReadConstraintsSchema = _usersReadConstraintsSchema;
 
@@ -7787,6 +7793,7 @@ const CURRENT_PLUGIN_CAPABILITIES = [
 	"content:read",
 	"content:write",
 	"taxonomies:read",
+	"taxonomies:write",
 	"media:read",
 	"media:write",
 	"users:read",
@@ -8002,7 +8009,10 @@ const declaredAccessSchema = object({
 		read: accessConstraints.optional(),
 		write: accessConstraints.optional()
 	}).optional(),
-	taxonomies: object({ read: accessConstraints.optional() }).optional(),
+	taxonomies: object({
+		read: accessConstraints.optional(),
+		write: accessConstraints.optional()
+	}).optional(),
 	media: object({
 		read: accessConstraints.optional(),
 		write: accessConstraints.optional()
@@ -8113,7 +8123,10 @@ function capabilitiesToDeclaredAccess(capabilities, allowedHosts) {
 		out.content = { read: {} };
 		if (caps.has("content:write")) out.content.write = {};
 	}
-	if (caps.has("taxonomies:read")) out.taxonomies = { read: {} };
+	if (caps.has("taxonomies:read") || caps.has("taxonomies:write")) {
+		out.taxonomies = { read: {} };
+		if (caps.has("taxonomies:write")) out.taxonomies.write = {};
+	}
 	if (caps.has("media:read") || caps.has("media:write")) {
 		out.media = { read: {} };
 		if (caps.has("media:write")) out.media.write = {};
@@ -8143,6 +8156,10 @@ function declaredAccessToCapabilities(declaredAccess) {
 		caps.add("content:read");
 	}
 	if (declaredAccess.taxonomies?.read) caps.add("taxonomies:read");
+	if (declaredAccess.taxonomies?.write) {
+		caps.add("taxonomies:write");
+		caps.add("taxonomies:read");
+	}
 	if (declaredAccess.media?.read) caps.add("media:read");
 	if (declaredAccess.media?.write) {
 		caps.add("media:write");
