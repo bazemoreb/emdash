@@ -7,7 +7,13 @@
  */
 
 export { blocks, elements } from "./builders.js";
-export { BLOCK_RESPONSE_LIMITS, validateBlockResponse, validateBlocks } from "./validation.js";
+export {
+	BLOCK_RESPONSE_LIMITS,
+	validateBlockResponse,
+	validateBlocks,
+	validateContentEditorActionResponse,
+	validateContentEditorPanelInteraction,
+} from "./validation.js";
 export type { BlockValidationPolicy, ValidationError } from "./validation.js";
 
 export type {
@@ -49,7 +55,10 @@ export type {
 	FormSubmit,
 	PageLoad,
 	BlockInteraction,
+	ContentEditorPanelInteraction,
+	ContentEditorActionInvocation,
 	PluginUiContext,
+	ContentEditorActionResponse,
 	// Response
 	BlockResponse,
 } from "./types.js";
