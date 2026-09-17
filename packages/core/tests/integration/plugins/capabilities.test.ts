@@ -30,7 +30,7 @@ import {
 	createUrlHelper,
 	createUserAccess,
 } from "../../../src/plugins/context.js";
-import type { ResolvedPlugin } from "../../../src/plugins/types.js";
+import type { PluginCommentStatus, ResolvedPlugin } from "../../../src/plugins/types.js";
 
 // Test regex patterns
 const NOT_ALLOWED_FETCH_REGEX = /not allowed to fetch from host/;
@@ -978,6 +978,38 @@ describe("Capability Enforcement Integration (v2)", () => {
 
 			const ctx = factory.createContext(plugin);
 			expect(ctx.users).toBeUndefined();
+		});
+
+		it("gates native comment reads and moderation independently", async () => {
+			const moderate = vi.fn(
+				async (_pluginId: string, id: string, status: PluginCommentStatus) => ({
+					id,
+					collection: "posts",
+					contentId: "post-1",
+					parentId: null,
+					authorName: "Reader",
+					authorEmail: "reader@example.com",
+					body: "Hello",
+					status,
+					ipHash: null,
+					userAgent: null,
+					moderationMetadata: null,
+					createdAt: "2026-01-01T00:00:00.000Z",
+					updatedAt: "2026-01-01T00:00:01.000Z",
+				}),
+			);
+			const factory = new PluginContextFactory({ db, commentModerate: moderate });
+			expect(factory.createContext(createTestPlugin()).comments).toBeUndefined();
+			const read = factory.createContext(
+				createTestPlugin({ capabilities: ["comments:read"] }),
+			).comments;
+			expect(read).toBeDefined();
+			expect(read?.setStatus).toBeUndefined();
+			const writable = factory.createContext(
+				createTestPlugin({ id: "moderator", capabilities: ["comments:moderate", "comments:read"] }),
+			).comments;
+			await writable?.setStatus?.("comment-1", "approved", { expectedStatus: "pending" });
+			expect(moderate).toHaveBeenCalledWith("moderator", "comment-1", "approved", "pending");
 		});
 
 		it("provides writable media (upload) for media:write when storage is configured", () => {

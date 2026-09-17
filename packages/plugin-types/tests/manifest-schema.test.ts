@@ -3,6 +3,20 @@ import { describe, expect, it } from "vitest";
 import { pluginManifestSchema } from "../src/manifest-schema.js";
 
 describe("pluginManifestSchema", () => {
+	it("reconciles comment moderation as implying personal-data reads", () => {
+		const result = pluginManifestSchema.parse({
+			id: "comment-shield",
+			version: "1.0.0",
+			declaredAccess: { comments: { moderate: {} } },
+			capabilities: [],
+			allowedHosts: [],
+			storage: {},
+			hooks: [],
+			routes: [],
+			admin: {},
+		});
+		expect(result.declaredAccess).toEqual({ comments: { moderate: {} } });
+	});
 	it("preserves route authorization, cache, MCP, and declarative admin metadata", () => {
 		const result = pluginManifestSchema.parse({
 			id: "calendar",

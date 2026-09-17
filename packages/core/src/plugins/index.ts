@@ -29,6 +29,7 @@ export {
 	createStorageAccess,
 	createContentAccess,
 	createContentAccessWithWrite,
+	createCommentAccess,
 	createMediaAccess,
 	createMediaAccessWithWrite,
 	createHttpAccess,
@@ -91,6 +92,7 @@ export type {
 	SandboxOptions,
 	SandboxEmailMessage,
 	SandboxEmailSendCallback,
+	SandboxCommentModerateCallback,
 	ResourceLimits,
 	PluginCodeStorage,
 	SerializedRequest,
@@ -202,6 +204,11 @@ export type {
 	ModerationDecision,
 	CollectionCommentSettings,
 	StoredComment,
+	PluginComment,
+	PluginCommentStatus,
+	CommentAccess,
+	CommentListOptions,
+	CommentCountOptions,
 
 	// Request metadata types
 	RequestMeta,

@@ -124,15 +124,33 @@ describe("declared access escalation decision table", () => {
 
 describe("canonicalizeDeclaredAccess", () => {
 	it("materializes write implications without mutating input and is idempotent", () => {
-		const input: DeclaredAccess = { media: { write: {} }, content: { write: {} } };
+		const input: DeclaredAccess = {
+			media: { write: {} },
+			content: { write: {} },
+			comments: { moderate: {} },
+		};
 		const canonical = canonicalizeDeclaredAccess(input);
-		expect(canonical).toEqual({ content: { read: {}, write: {} }, media: { read: {}, write: {} } });
-		expect(input).toEqual({ media: { write: {} }, content: { write: {} } });
+		expect(canonical).toEqual({
+			comments: { moderate: {}, read: {} },
+			content: { read: {}, write: {} },
+			media: { read: {}, write: {} },
+		});
+		expect(input).toEqual({
+			media: { write: {} },
+			content: { write: {} },
+			comments: { moderate: {} },
+		});
 		expect(canonicalizeDeclaredAccess(canonical)).toEqual(canonical);
 		expect(Object.isFrozen(canonical)).toBe(true);
 		expect(
 			declaredAccessEqual({ content: { write: {} } }, { content: { read: {}, write: {} } }),
 		).toBe(true);
+		expect(
+			declaredAccessEqual({ comments: { moderate: {} } }, { comments: { read: {}, moderate: {} } }),
+		).toBe(true);
+		expect(
+			diffDeclaredAccess({ comments: { moderate: {} } }, { comments: { read: {}, moderate: {} } }),
+		).toEqual({ changes: [], escalation: false });
 	});
 
 	it("sorts keys recursively and host sets while preserving other array order", () => {
@@ -306,5 +324,8 @@ describe("declaredAccessDigestInput", () => {
 		expect(implied).toContain('"domain":"@emdash-cms/plugin-types/declared-access"');
 		expect(implied).toContain('"version":1');
 		expect(implied).not.toBe(declaredAccessDigestInput({ content: { read: {} } }));
+		expect(declaredAccessDigestInput({ comments: { moderate: {} } })).toBe(
+			declaredAccessDigestInput({ comments: { read: {}, moderate: {} } }),
+		);
 	});
 });

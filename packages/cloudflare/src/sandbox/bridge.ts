@@ -21,6 +21,7 @@ import type {
 } from "emdash";
 import {
 	ContentRepository,
+	createCommentAccess,
 	CronAccessImpl,
 	createContentAccess,
 	createSandboxRouteError,
@@ -30,6 +31,14 @@ import {
 	PluginStorageRepository,
 	StorageSerializationError,
 	resolveContentCreateLocale,
+} from "emdash";
+import type {
+	CommentCountOptions,
+	CommentListOptions,
+	PluginComment,
+	PluginCommentStatus,
+	PaginatedResult,
+	SandboxCommentModerateCallback,
 } from "emdash";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
@@ -61,6 +70,11 @@ const SYSTEM_COLUMNS = new Set([
 
 /** Regex to validate file extensions (simple alphanumeric, 1-10 chars) */
 const FILE_EXT_REGEX = /^\.[a-z0-9]{1,10}$/i;
+const COMMENT_STATUSES = new Set<string>(["approved", "pending", "spam"]);
+
+function invalidCommentStatus(value: string, name: string): string | null {
+	return COMMENT_STATUSES.has(value) ? null : `${name} must be one of: approved, pending, spam`;
+}
 
 /**
  * Module-level email send callback.
@@ -74,6 +88,7 @@ const FILE_EXT_REGEX = /^\.[a-z0-9]{1,10}$/i;
 let emailSendCallback: SandboxEmailSendCallback | null = null;
 let cronRescheduleCallback: (() => void) | null = null;
 let cronNowCallback: (() => Date) | null = null;
+let commentModerateCallback: SandboxCommentModerateCallback | null = null;
 
 /**
  * Set the email send callback for all bridge instances.
@@ -89,6 +104,10 @@ export function setCronRescheduleCallback(callback: (() => void) | null): void {
 
 export function setCronNowCallback(callback: (() => Date) | null): void {
 	cronNowCallback = callback;
+}
+
+export function setCommentModerateCallback(callback: SandboxCommentModerateCallback | null): void {
+	commentModerateCallback = callback;
 }
 
 function serializeValue(value: unknown): unknown {
@@ -770,6 +789,85 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 			.bind(now, now, id)
 			.run();
 		return (result.meta?.changes ?? 0) > 0;
+	}
+
+	async commentGet(id: string): Promise<PluginComment | null> {
+		if (!this.ctx.props.capabilities.includes("comments:read")) {
+			throw new Error("Missing capability: comments:read");
+		}
+		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
+		return createCommentAccess(db).get(id);
+	}
+
+	async commentList(opts: CommentListOptions = {}): Promise<PaginatedResult<PluginComment>> {
+		if (!this.ctx.props.capabilities.includes("comments:read")) {
+			throw new Error("Missing capability: comments:read");
+		}
+		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
+		return createCommentAccess(db).list(opts);
+	}
+
+	async commentCount(opts: CommentCountOptions = {}): Promise<number> {
+		if (!this.ctx.props.capabilities.includes("comments:read")) {
+			throw new Error("Missing capability: comments:read");
+		}
+		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
+		return createCommentAccess(db).count(opts);
+	}
+
+	async commentSetStatus(
+		id: string,
+		status: PluginCommentStatus,
+		expectedStatus: PluginCommentStatus,
+	): Promise<
+		| PluginComment
+		| {
+				__emdashCommentError: {
+					code:
+						| "COMMENT_STATUS_CONFLICT"
+						| "COMMENT_MODERATION_IN_PROGRESS"
+						| "COMMENT_STATUS_INVALID";
+					message: string;
+					currentStatus?: string;
+				};
+		  }
+	> {
+		if (!this.ctx.props.capabilities.includes("comments:moderate")) {
+			throw new Error("Missing capability: comments:moderate");
+		}
+		const invalid =
+			invalidCommentStatus(status, "status") ??
+			invalidCommentStatus(expectedStatus, "expectedStatus");
+		if (invalid) {
+			return {
+				__emdashCommentError: {
+					code: "COMMENT_STATUS_INVALID",
+					message: invalid,
+				},
+			};
+		}
+		if (!commentModerateCallback) throw new Error("Comment moderation is unavailable");
+		try {
+			return await commentModerateCallback(this.ctx.props.pluginId, id, status, expectedStatus);
+		} catch (error) {
+			if (typeof error === "object" && error !== null && "code" in error) {
+				const code = error.code;
+				const currentStatus = "currentStatus" in error ? error.currentStatus : undefined;
+				if (
+					(code === "COMMENT_STATUS_CONFLICT" && typeof currentStatus === "string") ||
+					code === "COMMENT_MODERATION_IN_PROGRESS"
+				) {
+					return {
+						__emdashCommentError: {
+							code,
+							message: error instanceof Error ? error.message : "Comment moderation failed",
+							...(typeof currentStatus === "string" ? { currentStatus } : {}),
+						},
+					};
+				}
+			}
+			throw error;
+		}
 	}
 
 	// =========================================================================

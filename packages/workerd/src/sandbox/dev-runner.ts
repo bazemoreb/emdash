@@ -20,6 +20,7 @@ import type {
 	SandboxRunner,
 	SandboxedPluginInstance,
 	SandboxEmailSendCallback,
+	SandboxCommentModerateCallback,
 	SandboxOptions,
 	SerializedRequest,
 } from "emdash";
@@ -59,6 +60,7 @@ export class MiniflareDevRunner implements SandboxRunner {
 		trailingSlash?: "always" | "never" | "ignore";
 	};
 	private emailSendCallback: SandboxEmailSendCallback | null = null;
+	private commentModerateCallback: SandboxCommentModerateCallback | null = null;
 	private cronRescheduleCallback: (() => void) | null = null;
 
 	/** Miniflare instance (lazily created) */
@@ -83,6 +85,7 @@ export class MiniflareDevRunner implements SandboxRunner {
 		this.options = options;
 		this.siteInfo = options.siteInfo;
 		this.emailSendCallback = options.emailSend ?? null;
+		this.commentModerateCallback = options.commentModerate ?? null;
 		this.devInvokeToken = randomBytes(32).toString("hex");
 	}
 
@@ -111,6 +114,10 @@ export class MiniflareDevRunner implements SandboxRunner {
 
 	setEmailSend(callback: SandboxEmailSendCallback | null): void {
 		this.emailSendCallback = callback;
+	}
+
+	setCommentModerate(callback: SandboxCommentModerateCallback | null): void {
+		this.commentModerateCallback = callback;
 	}
 
 	setCronReschedule(callback: (() => void) | null): void {
@@ -183,6 +190,7 @@ export class MiniflareDevRunner implements SandboxRunner {
 				db: this.options.db,
 				beforeContentWrite: this.options.beforeContentWrite,
 				emailSend: () => this.emailSendCallback,
+				commentModerate: () => this.commentModerateCallback,
 				cronReschedule: () => this.cronRescheduleCallback?.(),
 				now: this.options.now,
 				storage: this.options.mediaStorage,

@@ -157,6 +157,8 @@ function defineNativePlugin<TStorage extends PluginStorageConfig>(
 		"network:request:unrestricted",
 		"content:read",
 		"content:write",
+		"comments:read",
+		"comments:moderate",
 		"taxonomies:read",
 		"media:read",
 		"media:write",
@@ -198,6 +200,9 @@ function defineNativePlugin<TStorage extends PluginStorageConfig>(
 	}
 	if (canonical.includes("media:write") && !canonical.includes("media:read")) {
 		normalizedCapabilities.push("media:read");
+	}
+	if (canonical.includes("comments:moderate") && !canonical.includes("comments:read")) {
+		normalizedCapabilities.push("comments:read");
 	}
 	if (
 		canonical.includes("network:request:unrestricted") &&

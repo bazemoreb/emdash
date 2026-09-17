@@ -20,6 +20,7 @@ import {
 	type SandboxRunner,
 	type SandboxedPluginInstance,
 	type SandboxEmailSendCallback,
+	type SandboxCommentModerateCallback,
 	type SandboxOptions,
 	type SandboxRunnerFactory,
 	type SerializedRequest,
@@ -27,7 +28,12 @@ import {
 	type I18nConfig,
 } from "emdash";
 
-import { setCronNowCallback, setCronRescheduleCallback, setEmailSendCallback } from "./bridge.js";
+import {
+	setCommentModerateCallback,
+	setCronNowCallback,
+	setCronRescheduleCallback,
+	setEmailSendCallback,
+} from "./bridge.js";
 import type { WorkerLoader, WorkerStub, PluginBridgeBinding, WorkerLoaderLimits } from "./types.js";
 import { generatePluginWrapper } from "./wrapper.js";
 
@@ -122,6 +128,7 @@ export class CloudflareSandboxRunner implements SandboxRunner {
 		// Wire email send callback if provided at construction time
 		setEmailSendCallback(options.emailSend ?? null);
 		setCronNowCallback(options.now ?? null);
+		setCommentModerateCallback(options.commentModerate ?? null);
 	}
 
 	/**
@@ -131,6 +138,10 @@ export class CloudflareSandboxRunner implements SandboxRunner {
 	 */
 	setEmailSend(callback: SandboxEmailSendCallback | null): void {
 		setEmailSendCallback(callback);
+	}
+
+	setCommentModerate(callback: SandboxCommentModerateCallback | null): void {
+		setCommentModerateCallback(callback);
 	}
 
 	setCronReschedule(callback: (() => void) | null): void {
@@ -283,11 +294,15 @@ class CloudflareSandboxedPlugin implements SandboxedPluginInstance {
 		// the rename (or sites still using the legacy alias layer) keep
 		// working — `normalizeCapabilities` rewrites legacy names like
 		// `read:content` → `content:read` and `network:fetch` → `network:request`.
+		const capabilities = normalizeCapabilities(this.manifest.capabilities || []);
+		if (capabilities.includes("comments:moderate") && !capabilities.includes("comments:read")) {
+			capabilities.push("comments:read");
+		}
 		const bridgeBinding = this.createBridge({
 			props: {
 				pluginId: this.manifest.id,
 				pluginVersion: this.manifest.version || "0.0.0",
-				capabilities: normalizeCapabilities(this.manifest.capabilities || []),
+				capabilities,
 				allowedHosts: this.manifest.allowedHosts || [],
 				storageCollections: Object.keys(this.manifest.storage || {}),
 				i18nConfig: getI18nConfig(),

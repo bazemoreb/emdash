@@ -359,6 +359,7 @@ describe("describeCapability", () => {
 	it("returns known capability label", () => {
 		expect(describeCapability("read:content")).toBe("Read your content");
 		expect(describeCapability("write:media")).toBe("Upload and manage media");
+		expect(describeCapability("comments:read")).toContain("author email addresses");
 	});
 
 	it("returns raw capability string for unknown capabilities", () => {
@@ -386,6 +387,8 @@ describe("CAPABILITY_LABELS", () => {
 			// Canonical
 			"content:read",
 			"content:write",
+			"comments:read",
+			"comments:moderate",
 			"taxonomies:read",
 			"media:read",
 			"media:write",

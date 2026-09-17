@@ -113,6 +113,16 @@ describe("declaredAccess facet mapping", () => {
 		});
 	});
 
+	it("maps comment moderation to personal-data read consent", () => {
+		expect(capabilitiesToDeclaredAccess(["comments:moderate"], [])).toEqual({
+			comments: { read: {}, moderate: {} },
+		});
+		expect(declaredAccessToCapabilities({ comments: { moderate: {} } })).toEqual({
+			capabilities: ["comments:moderate", "comments:read"],
+			allowedHosts: [],
+		});
+	});
+
 	it("distinguishes host-restricted from unrestricted network", () => {
 		expect(capabilitiesToDeclaredAccess(["network:request"], ["api.example.com"])).toEqual({
 			network: { request: { allowedHosts: ["api.example.com"] } },
@@ -160,6 +170,7 @@ describe("declaredAccess <-> capabilities round-trip (total over the vocabulary)
 	// always equals the capability set the runtime enforces.
 	const contentChoices = [[], ["content:read"], ["content:read", "content:write"]];
 	const mediaChoices = [[], ["media:read"], ["media:read", "media:write"]];
+	const commentChoices = [[], ["comments:read"], ["comments:read", "comments:moderate"]];
 	const networkChoices: { caps: string[]; hosts: string[] }[] = [
 		{ caps: [], hosts: [] },
 		{ caps: ["network:request", "network:request:unrestricted"], hosts: [] },
@@ -180,14 +191,16 @@ describe("declaredAccess <-> capabilities round-trip (total over the vocabulary)
 
 	function* states() {
 		for (const content of contentChoices) {
-			for (const media of mediaChoices) {
-				for (const network of networkChoices) {
-					for (let mask = 0; mask < 1 << singletonFacets.length; mask++) {
-						const extra = singletonFacets.filter((_, i) => mask & (1 << i));
-						yield {
-							capabilities: [...content, ...media, ...network.caps, ...extra],
-							allowedHosts: network.hosts,
-						};
+			for (const comments of commentChoices) {
+				for (const media of mediaChoices) {
+					for (const network of networkChoices) {
+						for (let mask = 0; mask < 1 << singletonFacets.length; mask++) {
+							const extra = singletonFacets.filter((_, i) => mask & (1 << i));
+							yield {
+								capabilities: [...content, ...comments, ...media, ...network.caps, ...extra],
+								allowedHosts: network.hosts,
+							};
+						}
 					}
 				}
 			}
@@ -204,7 +217,7 @@ describe("declaredAccess <-> capabilities round-trip (total over the vocabulary)
 			expect(new Set(back.allowedHosts)).toEqual(new Set(input.allowedHosts));
 			count++;
 		}
-		// 3 content x 3 media x 5 network x 2^6 singleton subsets.
-		expect(count).toBe(2880);
+		// 3 content x 3 comments x 3 media x 5 network x 2^6 singleton subsets.
+		expect(count).toBe(8640);
 	});
 });

@@ -9,6 +9,10 @@ import type {
 	ContentCreateOptions,
 	ContentListOptions,
 	CronTaskInfo,
+	CommentListOptions,
+	CommentCountOptions,
+	PluginComment,
+	PluginCommentStatus,
 	UpdateIfArgs,
 	UpdateIfResult,
 	VersionedValue,
@@ -246,6 +250,31 @@ export interface PluginBridgeBinding {
 		data: Record<string, unknown>,
 	): Promise<BridgeContentItem>;
 	contentDelete(collection: string, id: string): Promise<boolean>;
+	// Comments
+	commentGet(id: string): Promise<PluginComment | null>;
+	commentList(opts?: CommentListOptions): Promise<{
+		items: PluginComment[];
+		cursor?: string;
+		hasMore: boolean;
+	}>;
+	commentCount(opts?: CommentCountOptions): Promise<number>;
+	commentSetStatus(
+		id: string,
+		status: PluginCommentStatus,
+		expectedStatus: PluginCommentStatus,
+	): Promise<
+		| PluginComment
+		| {
+				__emdashCommentError: {
+					code:
+						| "COMMENT_STATUS_CONFLICT"
+						| "COMMENT_MODERATION_IN_PROGRESS"
+						| "COMMENT_STATUS_INVALID";
+					message: string;
+					currentStatus?: string;
+				};
+		  }
+	>;
 	// Taxonomies (read-only, gated on taxonomies:read)
 	taxonomyList(opts?: { locale?: string }): Promise<BridgeTaxonomyDef[]>;
 	taxonomyTerms(taxonomy: string, opts?: { locale?: string }): Promise<BridgeTaxonomyTerm[]>;

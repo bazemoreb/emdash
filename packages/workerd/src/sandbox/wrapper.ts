@@ -39,8 +39,13 @@ export interface WrapperOptions {
 export function generatePluginWrapper(manifest: PluginManifest, options: WrapperOptions): string {
 	const site = options.site ?? { name: "", url: "", locale: "en" };
 	const capabilities = normalizeCapabilities(manifest.capabilities);
+	if (capabilities.includes("comments:moderate") && !capabilities.includes("comments:read")) {
+		capabilities.push("comments:read");
+	}
 	const hasReadUsers = capabilities.includes("users:read");
 	const hasEmailSend = capabilities.includes("email:send");
+	const hasReadComments = capabilities.includes("comments:read");
+	const hasModerateComments = capabilities.includes("comments:moderate");
 
 	return `
 // =============================================================================
@@ -170,6 +175,20 @@ function sandboxRouteErrorDetails(value) {
 	};
 }
 
+function commentErrorDetails(value) {
+	if (!value || typeof value !== "object" ||
+		(value.code !== "COMMENT_STATUS_CONFLICT" &&
+			value.code !== "COMMENT_MODERATION_IN_PROGRESS" &&
+			value.code !== "COMMENT_STATUS_INVALID") ||
+		typeof value.message !== "string" ||
+		(value.code === "COMMENT_STATUS_CONFLICT" && typeof value.currentStatus !== "string")) return null;
+	return {
+		code: value.code,
+		message: value.message,
+		...(typeof value.currentStatus === "string" ? { currentStatus: value.currentStatus } : {}),
+	};
+}
+
 function sandboxRouteErrorResponse(error) {
 	const details = sandboxRouteErrorDetails(error);
 	return details
@@ -199,6 +218,12 @@ async function bridgeCall(method, body) {
 			const payload = JSON.parse(text);
 			const storageDetails = storageSerializationErrorDetails(payload?.error);
 			if (storageDetails) throw Object.assign(new Error(storageDetails.message), storageDetails);
+			const commentDetails = commentErrorDetails(payload?.error);
+			if (commentDetails) {
+				throw Object.assign(new Error(commentDetails.message), commentDetails, {
+					name: commentDetails.code,
+				});
+			}
 			const details = sandboxRouteErrorDetails(payload?.error);
 			if (details) {
 				const error = Object.assign(new Error(details.message), details, {
@@ -207,7 +232,11 @@ async function bridgeCall(method, body) {
 				throw error;
 			}
 		} catch (error) {
-			if (sandboxRouteErrorDetails(error) || storageSerializationErrorDetails(error)) throw error;
+			if (
+				sandboxRouteErrorDetails(error) ||
+				storageSerializationErrorDetails(error) ||
+				commentErrorDetails(error)
+			) throw error;
 		}
 		throw new Error("Bridge call " + method + " failed: " + text);
 	}
@@ -464,6 +493,19 @@ function createContext() {
 		list: (opts) => bridgeCall("users/list", opts || {}),
 	} : undefined;
 
+	const comments = ${hasReadComments} ? {
+		get: (id) => bridgeCall("comments/get", { id }),
+		list: (opts) => bridgeCall("comments/list", opts || {}),
+		count: (opts) => bridgeCall("comments/count", opts || {}),
+		...(${hasModerateComments} ? {
+			setStatus: (id, status, opts) => bridgeCall("comments/setStatus", {
+				id,
+				status,
+				expectedStatus: opts.expectedStatus,
+			})
+		} : {})
+	} : undefined;
+
 	const email = ${hasEmailSend} ? {
 		send: (message) => bridgeCall("email/send", { message }),
 	} : undefined;
@@ -489,6 +531,7 @@ function createContext() {
 		site,
 		url,
 		users,
+		comments,
 		email,
 		cron,
 	};

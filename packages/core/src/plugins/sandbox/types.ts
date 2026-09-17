@@ -10,7 +10,13 @@
 import type { Kysely } from "kysely";
 
 import type { Database } from "../../database/types.js";
-import type { PluginManifest, RequestMeta, UserInfo } from "../types.js";
+import type {
+	PluginComment,
+	PluginCommentStatus,
+	PluginManifest,
+	RequestMeta,
+	UserInfo,
+} from "../types.js";
 
 /**
  * Resource limits for sandboxed plugins.
@@ -61,6 +67,13 @@ export type SandboxEmailSendCallback = (
 	pluginId: string,
 ) => Promise<void>;
 
+export type SandboxCommentModerateCallback = (
+	pluginId: string,
+	id: string,
+	status: PluginCommentStatus,
+	expectedStatus: PluginCommentStatus,
+) => Promise<PluginComment>;
+
 /**
  * Options for creating a sandbox runner
  */
@@ -84,6 +97,7 @@ export interface SandboxOptions {
 	};
 	/** Email send callback, wired from the EmailPipeline by the runtime */
 	emailSend?: SandboxEmailSendCallback;
+	commentModerate?: SandboxCommentModerateCallback;
 	/**
 	 * Media storage adapter for sandboxed plugin uploads and deletes.
 	 * When provided, plugins with write:media can upload and delete files
@@ -265,6 +279,7 @@ export interface SandboxRunner {
 	 * doesn't exist when the sandbox runner is constructed.
 	 */
 	setEmailSend(callback: SandboxEmailSendCallback | null): void;
+	setCommentModerate?(callback: SandboxCommentModerateCallback | null): void;
 
 	/** Wake a long-lived scheduler after a sandboxed plugin changes its tasks. */
 	setCronReschedule?(callback: (() => void) | null): void;

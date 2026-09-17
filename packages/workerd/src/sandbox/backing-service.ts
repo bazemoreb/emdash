@@ -76,6 +76,7 @@ export function createBackingServiceHandler(runner: WorkerdSandboxRunner): Backi
 					db: runner.db,
 					beforeContentWrite: runner.beforeContentWrite,
 					emailSend: () => runner.emailSend,
+					commentModerate: () => runner.commentModerate,
 					cronReschedule: () => runner.cronReschedule?.(),
 					now: runner.now,
 					storage: runner.mediaStorage,

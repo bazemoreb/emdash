@@ -28,6 +28,8 @@ export const CURRENT_PLUGIN_CAPABILITIES = [
 	"network:request:unrestricted",
 	"content:read",
 	"content:write",
+	"comments:read",
+	"comments:moderate",
 	"taxonomies:read",
 	"media:read",
 	"media:write",
@@ -270,6 +272,9 @@ const accessConstraints = z.record(z.string(), z.unknown());
 const declaredAccessSchema = z.object({
 	content: z
 		.object({ read: accessConstraints.optional(), write: accessConstraints.optional() })
+		.optional(),
+	comments: z
+		.object({ read: accessConstraints.optional(), moderate: accessConstraints.optional() })
 		.optional(),
 	taxonomies: z.object({ read: accessConstraints.optional() }).optional(),
 	media: z

@@ -41,8 +41,13 @@ export function generatePluginWrapper(manifest: PluginManifest, options?: Wrappe
 	// Normalize so manifests that still declare legacy names (`read:users`)
 	// expose the same APIs as canonical names (`users:read`).
 	const capabilities = normalizeCapabilities(manifest.capabilities ?? []);
+	if (capabilities.includes("comments:moderate") && !capabilities.includes("comments:read")) {
+		capabilities.push("comments:read");
+	}
 	const hasReadUsers = capabilities.includes("users:read");
 	const hasEmailSend = capabilities.includes("email:send");
+	const hasReadComments = capabilities.includes("comments:read");
+	const hasModerateComments = capabilities.includes("comments:moderate");
 
 	return `
 // =============================================================================
@@ -92,6 +97,20 @@ function sandboxRouteErrorDetails(value) {
 				: "Unable to verify media usage activation state",
 		status: 503,
 	};
+}
+
+function unwrapCommentResult(value) {
+	if (!value || typeof value !== "object" || !("__emdashCommentError" in value)) return value;
+	const details = value.__emdashCommentError;
+	if (!details ||
+		(details.code !== "COMMENT_STATUS_CONFLICT" &&
+			details.code !== "COMMENT_MODERATION_IN_PROGRESS" &&
+			details.code !== "COMMENT_STATUS_INVALID") ||
+		typeof details.message !== "string" ||
+		(details.code === "COMMENT_STATUS_CONFLICT" && typeof details.currentStatus !== "string")) {
+		throw new Error("Invalid comment moderation error response");
+	}
+	throw Object.assign(new Error(details.message), details, { name: details.code });
 }
 
 // -----------------------------------------------------------------------------
@@ -213,6 +232,16 @@ function createContext(env) {
 		getByEmail: (email) => bridge.userGetByEmail(email),
 		list: (opts) => bridge.userList(opts)
 	} : undefined;
+
+	const comments = ${hasReadComments} ? {
+		get: (id) => bridge.commentGet(id),
+		list: (opts) => bridge.commentList(opts),
+		count: (opts) => bridge.commentCount(opts),
+		...(${hasModerateComments} ? {
+			setStatus: async (id, status, opts) =>
+				unwrapCommentResult(await bridge.commentSetStatus(id, status, opts.expectedStatus))
+		} : {})
+	} : undefined;
 	
 	// Email access - proxies to bridge (capability enforced by bridge)
 	const email = ${hasEmailSend} ? {
@@ -240,6 +269,7 @@ function createContext(env) {
 		site,
 		url,
 		users,
+		comments,
 		email,
 		cron
 	};

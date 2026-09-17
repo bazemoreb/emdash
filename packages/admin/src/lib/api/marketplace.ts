@@ -382,6 +382,8 @@ export const CAPABILITY_LABELS: Record<string, MessageDescriptor> = {
 	// Canonical
 	"content:read": msg`Read your content`,
 	"content:write": msg`Create, update, and delete content`,
+	"comments:read": msg`Read comment bodies, author email addresses, pseudonymous IP hashes, user agents, and moderation metadata`,
+	"comments:moderate": msg`Approve comments and mark them as pending or spam`,
 	"taxonomies:read": msg`Read your taxonomies and terms`,
 	"media:read": msg`Access your media library`,
 	"media:write": msg`Upload and manage media`,

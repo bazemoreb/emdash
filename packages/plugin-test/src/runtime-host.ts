@@ -5,6 +5,7 @@ import { reset } from "cloudflare:test";
 import { env } from "cloudflare:workers";
 import {
 	ContentRepository,
+	CommentRepository,
 	OptionsRepository,
 	SchemaRegistry,
 	UserRepository,
@@ -68,8 +69,21 @@ export interface PluginRuntimeTestHost {
 			email: string;
 			name?: string;
 			role?: "subscriber" | "contributor" | "author" | "editor" | "admin";
+			emailVerified?: boolean;
 		}): Promise<UserInfo>;
 		content(collection: string, input: Omit<CreateContentInput, "type">): Promise<ContentItem>;
+		comment(input: {
+			collection: string;
+			contentId: string;
+			authorName: string;
+			authorEmail: string;
+			body: string;
+			status?: "approved" | "pending" | "spam" | "trash";
+			parentId?: string | null;
+			ipHash?: string | null;
+			userAgent?: string | null;
+			moderationMetadata?: Record<string, unknown> | null;
+		}): Promise<{ id: string }>;
 		plugin: {
 			setting(key: string, value: unknown): Promise<void>;
 			kv(key: string, value: unknown): Promise<void>;
@@ -111,6 +125,11 @@ export interface PluginRuntimeTestHost {
 				status: "pending" | "approved" | "spam" | "trash",
 				moderator: UserInfo,
 			): ReturnType<EmDashRuntime["handleCommentModerate"]>;
+			moderateAsPlugin(
+				id: string,
+				status: "pending" | "approved" | "spam",
+				expectedStatus: "pending" | "approved" | "spam",
+			): ReturnType<EmDashRuntime["handlePluginCommentModerate"]>;
 		};
 		routes: { request(name: string, request?: PluginRuntimeRouteRequest): Promise<Response> };
 	};
@@ -398,7 +417,15 @@ export async function createPluginRuntimeTestHost(
 			},
 			async user(input) {
 				assertActive();
-				const user = await new UserRepository(runtime.db).create(input);
+				const { emailVerified, ...userInput } = input;
+				const user = await new UserRepository(runtime.db).create(userInput);
+				if (emailVerified) {
+					await runtime.db
+						.updateTable("users")
+						.set({ email_verified: 1 })
+						.where("id", "=", user.id)
+						.execute();
+				}
 				return {
 					id: user.id,
 					email: user.email,
@@ -410,6 +437,11 @@ export async function createPluginRuntimeTestHost(
 			content(collection, input) {
 				assertActive();
 				return new ContentRepository(runtime.db).create({ ...input, type: collection });
+			},
+			async comment(input) {
+				assertActive();
+				const comment = await new CommentRepository(runtime.db).create(input);
+				return { id: comment.id };
 			},
 			plugin: {
 				setting: (key, value) => optionRepo.set(`plugin:${manifest.id}:settings:${key}`, value),
@@ -469,6 +501,8 @@ export async function createPluginRuntimeTestHost(
 						id: moderator.id,
 						name: moderator.name,
 					}),
+				moderateAsPlugin: (id, status, expectedStatus) =>
+					runtime.handlePluginCommentModerate(manifest.id, id, status, expectedStatus),
 			},
 			routes: {
 				request(name, request = {}) {

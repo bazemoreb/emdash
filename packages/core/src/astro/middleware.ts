@@ -930,6 +930,9 @@ export const onRequest = defineMiddleware(async (context, next) => {
 						: {}),
 					handleMediaDelete: runtime.handleMediaDelete.bind(runtime),
 
+					// Comment administration
+					handleCommentModerate: runtime.handleCommentModerate.bind(runtime),
+
 					// Revision handlers
 					handleRevisionList: runtime.handleRevisionList.bind(runtime),
 					handleRevisionGet: runtime.handleRevisionGet.bind(runtime),

@@ -30,6 +30,7 @@ import { join } from "node:path";
 import type {
 	SandboxRunner,
 	SandboxedPluginInstance,
+	SandboxCommentModerateCallback,
 	SandboxEmailSendCallback,
 	SandboxOptions,
 	SandboxRunnerFactory,
@@ -332,6 +333,7 @@ export class WorkerdSandboxRunner implements SandboxRunner {
 
 	/** Email send callback, wired from EmailPipeline */
 	private emailSendCallback: SandboxEmailSendCallback | null = null;
+	private commentModerateCallback: SandboxCommentModerateCallback | null = null;
 	private cronRescheduleCallback: (() => void) | null = null;
 
 	/** Epoch counter, incremented on each workerd restart */
@@ -385,6 +387,7 @@ export class WorkerdSandboxRunner implements SandboxRunner {
 		this.limits = resolveLimits(options.limits);
 		this.siteInfo = options.siteInfo;
 		this.emailSendCallback = options.emailSend ?? null;
+		this.commentModerateCallback = options.commentModerate ?? null;
 
 		// Warn about unenforceable resource limits. Standalone workerd
 		// only supports wall-time enforcement on the Node path (via
@@ -515,6 +518,10 @@ export class WorkerdSandboxRunner implements SandboxRunner {
 	 */
 	setEmailSend(callback: SandboxEmailSendCallback | null): void {
 		this.emailSendCallback = callback;
+	}
+
+	setCommentModerate(callback: SandboxCommentModerateCallback | null): void {
+		this.commentModerateCallback = callback;
 	}
 
 	setCronReschedule(callback: (() => void) | null): void {
@@ -923,6 +930,10 @@ export class WorkerdSandboxRunner implements SandboxRunner {
 	/** Get the email send callback */
 	get emailSend() {
 		return this.emailSendCallback;
+	}
+
+	get commentModerate() {
+		return this.commentModerateCallback;
 	}
 
 	get cronReschedule() {

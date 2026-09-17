@@ -1,6 +1,39 @@
 import type {} from "@atcute/lexicons";
 import * as v from "@atcute/lexicons/validations";
 
+const _commentsAccessSchema = /*#__PURE__*/ v.object({
+	$type: /*#__PURE__*/ v.optional(
+		/*#__PURE__*/ v.literal(
+			"com.emdashcms.experimental.package.releaseExtension#commentsAccess",
+		),
+	),
+	/**
+	 * Plugin may change comment status with an expected-state precondition. Implies `read`.
+	 */
+	get moderate() {
+		return /*#__PURE__*/ v.optional(commentsModerateConstraintsSchema);
+	},
+	/**
+	 * Plugin may read non-trashed comments and their personal and moderation data.
+	 */
+	get read() {
+		return /*#__PURE__*/ v.optional(commentsReadConstraintsSchema);
+	},
+});
+const _commentsModerateConstraintsSchema = /*#__PURE__*/ v.object({
+	$type: /*#__PURE__*/ v.optional(
+		/*#__PURE__*/ v.literal(
+			"com.emdashcms.experimental.package.releaseExtension#commentsModerateConstraints",
+		),
+	),
+});
+const _commentsReadConstraintsSchema = /*#__PURE__*/ v.object({
+	$type: /*#__PURE__*/ v.optional(
+		/*#__PURE__*/ v.literal(
+			"com.emdashcms.experimental.package.releaseExtension#commentsReadConstraints",
+		),
+	),
+});
 const _contentAccessSchema = /*#__PURE__*/ v.object({
 	$type: /*#__PURE__*/ v.optional(
 		/*#__PURE__*/ v.literal(
@@ -40,6 +73,12 @@ const _declaredAccessSchema = /*#__PURE__*/ v.object({
 			"com.emdashcms.experimental.package.releaseExtension#declaredAccess",
 		),
 	),
+	/**
+	 * Access to comment text, author contact and request metadata, and moderation state.
+	 */
+	get comments() {
+		return /*#__PURE__*/ v.optional(commentsAccessSchema);
+	},
 	/**
 	 * Access to site content (posts, pages, custom collections).
 	 */
@@ -316,6 +355,10 @@ const _usersReadConstraintsSchema = /*#__PURE__*/ v.object({
 	),
 });
 
+type commentsAccess$schematype = typeof _commentsAccessSchema;
+type commentsModerateConstraints$schematype =
+	typeof _commentsModerateConstraintsSchema;
+type commentsReadConstraints$schematype = typeof _commentsReadConstraintsSchema;
 type contentAccess$schematype = typeof _contentAccessSchema;
 type contentReadConstraints$schematype = typeof _contentReadConstraintsSchema;
 type contentWriteConstraints$schematype = typeof _contentWriteConstraintsSchema;
@@ -342,6 +385,9 @@ type taxonomiesReadConstraints$schematype =
 type usersAccess$schematype = typeof _usersAccessSchema;
 type usersReadConstraints$schematype = typeof _usersReadConstraintsSchema;
 
+export interface commentsAccessSchema extends commentsAccess$schematype {}
+export interface commentsModerateConstraintsSchema extends commentsModerateConstraints$schematype {}
+export interface commentsReadConstraintsSchema extends commentsReadConstraints$schematype {}
 export interface contentAccessSchema extends contentAccess$schematype {}
 export interface contentReadConstraintsSchema extends contentReadConstraints$schematype {}
 export interface contentWriteConstraintsSchema extends contentWriteConstraints$schematype {}
@@ -364,6 +410,12 @@ export interface taxonomiesReadConstraintsSchema extends taxonomiesReadConstrain
 export interface usersAccessSchema extends usersAccess$schematype {}
 export interface usersReadConstraintsSchema extends usersReadConstraints$schematype {}
 
+export const commentsAccessSchema =
+	_commentsAccessSchema as commentsAccessSchema;
+export const commentsModerateConstraintsSchema =
+	_commentsModerateConstraintsSchema as commentsModerateConstraintsSchema;
+export const commentsReadConstraintsSchema =
+	_commentsReadConstraintsSchema as commentsReadConstraintsSchema;
 export const contentAccessSchema = _contentAccessSchema as contentAccessSchema;
 export const contentReadConstraintsSchema =
 	_contentReadConstraintsSchema as contentReadConstraintsSchema;
@@ -399,6 +451,15 @@ export const usersAccessSchema = _usersAccessSchema as usersAccessSchema;
 export const usersReadConstraintsSchema =
 	_usersReadConstraintsSchema as usersReadConstraintsSchema;
 
+export interface CommentsAccess extends v.InferInput<
+	typeof commentsAccessSchema
+> {}
+export interface CommentsModerateConstraints extends v.InferInput<
+	typeof commentsModerateConstraintsSchema
+> {}
+export interface CommentsReadConstraints extends v.InferInput<
+	typeof commentsReadConstraintsSchema
+> {}
 export interface ContentAccess extends v.InferInput<
 	typeof contentAccessSchema
 > {}

@@ -19,6 +19,7 @@ export type { EmDashConfigurationErrorCode } from "./config/errors.js";
 // Repositories
 export {
 	ContentRepository,
+	CommentRepository,
 	MediaRepository,
 	PluginStorageRepository,
 	UserRepository,
@@ -283,6 +284,7 @@ export {
 	createUnrestrictedHttpAccess,
 	createContentAccess,
 	createContentAccessWithWrite,
+	createCommentAccess,
 	CronAccessImpl,
 } from "./plugins/index.js";
 export type {
@@ -302,6 +304,7 @@ export type {
 	ContentAccess,
 	ContentCreateOptions,
 	ContentListOptions,
+	PaginatedResult,
 	CronTaskInfo,
 	MediaAccess,
 	HttpAccess,
@@ -344,6 +347,11 @@ export type {
 	ModerationDecision,
 	CollectionCommentSettings,
 	StoredComment,
+	PluginComment,
+	PluginCommentStatus,
+	CommentAccess,
+	CommentListOptions,
+	CommentCountOptions,
 
 	// Scheduler types
 	CronScheduler,
@@ -356,6 +364,7 @@ export type {
 	SandboxOptions,
 	SandboxEmailMessage,
 	SandboxEmailSendCallback,
+	SandboxCommentModerateCallback,
 	PluginManifest,
 	ValidatedPluginManifest,
 	SerializedRequest,
