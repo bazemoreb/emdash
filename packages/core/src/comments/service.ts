@@ -219,7 +219,7 @@ async function moderateCommentWithinGuard(
 
 	if (newStatus === "approved") await onApproved?.(updated);
 
-	// Fire comment:afterModerate (fire-and-forget)
+	// Run comment:afterModerate after a successful transition
 	const afterEvent: CommentAfterModerateEvent = {
 		comment: commentToStored(updated),
 		previousStatus: expectedStatus,
