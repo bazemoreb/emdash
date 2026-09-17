@@ -123,6 +123,7 @@ async function runMigrations(db: Kysely<any>) {
 		.addColumn("auto", "integer", (col) => col.notNull())
 		.addColumn("config_revision", "text", (col) => col.notNull())
 		.addColumn("source_guard", "integer", (col) => col.notNull())
+		.addColumn("write_generation", "integer", (col) => col.notNull())
 		.addColumn("created_at", "text", (col) => col.notNull())
 		.addColumn("updated_at", "text", (col) => col.notNull())
 		.execute();
@@ -136,10 +137,11 @@ async function runMigrations(db: Kysely<any>) {
 		.addColumn("id", "integer", (col) => col.primaryKey())
 		.addColumn("token", "text", (col) => col.notNull())
 		.addColumn("expires_at", "integer", (col) => col.notNull())
+		.addColumn("generation", "integer", (col) => col.notNull())
 		.execute();
 	await db
 		.insertInto("_emdash_redirect_write_lock" as any)
-		.values({ id: 1, token: "", expires_at: 0 })
+		.values({ id: 1, token: "", expires_at: 0, generation: 0 })
 		.execute();
 
 	// Content table for posts (created by SchemaRegistry in real code)

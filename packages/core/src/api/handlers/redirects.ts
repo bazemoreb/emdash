@@ -8,6 +8,7 @@ import { OptionsRepository } from "../../database/repositories/options.js";
 import {
 	RedirectRepository,
 	RedirectWriteBusyError,
+	type RedirectWriteFence,
 	type Redirect,
 	type NotFoundEntry,
 	type NotFoundSummary,
@@ -23,7 +24,7 @@ import type { ApiResult } from "../types.js";
 
 async function withRedirectWriteLock<T>(
 	repo: RedirectRepository,
-	action: () => Promise<ApiResult<T>>,
+	action: (fence: RedirectWriteFence) => Promise<ApiResult<T>>,
 ): Promise<ApiResult<T>> {
 	try {
 		return await repo.withWriteLock(action);
@@ -98,7 +99,7 @@ export async function handleRedirectCreate(
 ): Promise<ApiResult<Redirect>> {
 	try {
 		const repo = new RedirectRepository(db);
-		return await withRedirectWriteLock(repo, async () => {
+		return await withRedirectWriteLock(repo, async (fence) => {
 			const type = input.type ?? 301;
 			// Terminal statuses (410 Gone / 451) are served directly and have no
 			// destination — skip the destination/loop checks for them.
@@ -160,14 +161,17 @@ export async function handleRedirectCreate(
 				if (loopPath) return loopError(loopPath);
 			}
 
-			const redirect = await repo.create({
-				source: input.source,
-				destination,
-				type,
-				isPattern: sourceIsPattern,
-				enabled: input.enabled ?? true,
-				groupName: input.groupName ?? null,
-			});
+			const redirect = await repo.create(
+				{
+					source: input.source,
+					destination,
+					type,
+					isPattern: sourceIsPattern,
+					enabled: input.enabled ?? true,
+					groupName: input.groupName ?? null,
+				},
+				fence,
+			);
 			invalidateRedirectCache();
 
 			return { success: true, data: redirect };
@@ -224,7 +228,7 @@ export async function handleRedirectUpdate(
 ): Promise<ApiResult<Redirect>> {
 	try {
 		const repo = new RedirectRepository(db);
-		return await withRedirectWriteLock(repo, async () => {
+		return await withRedirectWriteLock(repo, async (fence) => {
 			const existing = await repo.findById(id);
 			if (!existing) {
 				return {
@@ -334,6 +338,7 @@ export async function handleRedirectUpdate(
 					groupName: input.groupName,
 				},
 				options?.expectedRevision,
+				fence,
 			);
 
 			if (!updated) {
@@ -369,7 +374,7 @@ export async function handleRedirectDelete(
 ): Promise<ApiResult<{ deleted: true }>> {
 	try {
 		const repo = new RedirectRepository(db);
-		return await withRedirectWriteLock(repo, async () => {
+		return await withRedirectWriteLock(repo, async (fence) => {
 			if (options?.expectedRevision !== undefined) {
 				const existing = await repo.findById(id);
 				if (!existing) {
@@ -386,7 +391,7 @@ export async function handleRedirectDelete(
 					};
 				}
 			}
-			const deleted = await repo.delete(id, options?.expectedRevision);
+			const deleted = await repo.delete(id, options?.expectedRevision, fence);
 
 			if (!deleted) {
 				return {

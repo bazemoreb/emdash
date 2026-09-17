@@ -21,6 +21,39 @@ describe("RedirectRepository", () => {
 	// --- CRUD ---------------------------------------------------------------
 
 	describe("create", () => {
+		it("fences an expired writer before it can commit", async () => {
+			let markAcquired: (() => void) | undefined;
+			const acquired = new Promise<void>((resolve) => {
+				markAcquired = resolve;
+			});
+			let releaseStale: (() => void) | undefined;
+			const staleCanContinue = new Promise<void>((resolve) => {
+				releaseStale = resolve;
+			});
+			const staleWrite = repo.withWriteLock(async (fence) => {
+				markAcquired?.();
+				await staleCanContinue;
+				return repo.create({ source: "/a", destination: "/b" }, fence);
+			});
+			await acquired;
+			await db
+				.updateTable("_emdash_redirect_write_lock")
+				.set({ expires_at: 0 })
+				.where("id", "=", 1)
+				.execute();
+			await repo.withWriteLock((fence) =>
+				repo.create({ source: "/current", destination: "/target" }, fence),
+			);
+			const staleRejected = expect(staleWrite).rejects.toThrow("redirect write lease expired");
+			releaseStale?.();
+
+			await staleRejected;
+			await expect(repo.findBySource("/a")).resolves.toBeNull();
+			await expect(repo.findBySource("/current")).resolves.toMatchObject({
+				destination: "/target",
+			});
+		});
+
 		it("creates a redirect with defaults", async () => {
 			const redirect = await repo.create({
 				source: "/old",

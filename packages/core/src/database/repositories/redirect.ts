@@ -109,6 +109,11 @@ export class RedirectWriteBusyError extends Error {
 	override readonly name = "RedirectWriteBusyError";
 }
 
+export interface RedirectWriteFence {
+	token: string;
+	generation: number;
+}
+
 const REDIRECT_WRITE_LOCK_ID = 1;
 const REDIRECT_WRITE_LEASE_MS = 30_000;
 const REDIRECT_WRITE_LOCK_ATTEMPTS = 5;
@@ -174,28 +179,33 @@ export class RedirectRepository {
 		return row?.config_revision ?? null;
 	}
 
-	async withWriteLock<T>(action: () => Promise<T>): Promise<T> {
+	async withWriteLock<T>(action: (fence: RedirectWriteFence) => Promise<T>): Promise<T> {
 		const token = ulid();
-		let acquired = false;
+		let fence: RedirectWriteFence | undefined;
 		for (let attempt = 0; attempt < REDIRECT_WRITE_LOCK_ATTEMPTS; attempt++) {
 			const now = Date.now();
 			const result = await this.db
 				.updateTable("_emdash_redirect_write_lock")
-				.set({ token, expires_at: now + REDIRECT_WRITE_LEASE_MS })
+				.set({
+					token,
+					expires_at: now + REDIRECT_WRITE_LEASE_MS,
+					generation: sql`generation + 1`,
+				})
 				.where("id", "=", REDIRECT_WRITE_LOCK_ID)
 				.where((eb) => eb.or([eb("token", "=", ""), eb("expires_at", "<", now)]))
+				.returning("generation")
 				.executeTakeFirst();
-			if (BigInt(result.numUpdatedRows) > 0n) {
-				acquired = true;
+			if (result) {
+				fence = { token, generation: result.generation };
 				break;
 			}
 			await new Promise((resolve) => setTimeout(resolve, 10 * 2 ** attempt));
 		}
-		if (!acquired) {
+		if (!fence) {
 			throw new RedirectWriteBusyError("Another redirect change is in progress");
 		}
 		try {
-			return await action();
+			return await action(fence);
 		} finally {
 			try {
 				await this.db
@@ -274,7 +284,7 @@ export class RedirectRepository {
 		return result;
 	}
 
-	async create(input: CreateRedirectInput): Promise<Redirect> {
+	async create(input: CreateRedirectInput, fence?: RedirectWriteFence): Promise<Redirect> {
 		const id = ulid();
 		const now = new Date().toISOString();
 		const patternFlag = input.isPattern ?? isPattern(input.source);
@@ -294,6 +304,7 @@ export class RedirectRepository {
 				auto: input.auto ? 1 : 0,
 				config_revision: ulid(),
 				source_guard: 1,
+				write_generation: fence?.generation ?? 0,
 				created_at: now,
 				updated_at: now,
 			})
@@ -306,6 +317,7 @@ export class RedirectRepository {
 		id: string,
 		input: UpdateRedirectInput,
 		expectedRevision?: string,
+		fence?: RedirectWriteFence,
 	): Promise<Redirect | null> {
 		const existing = await this.findById(id);
 		if (!existing) return null;
@@ -333,16 +345,44 @@ export class RedirectRepository {
 		if (expectedRevision !== undefined) {
 			query = query.where("config_revision", "=", expectedRevision);
 		}
+		if (fence) {
+			query = query.where((eb) =>
+				eb.exists(
+					eb
+						.selectFrom("_emdash_redirect_write_lock")
+						.select("id")
+						.where("id", "=", REDIRECT_WRITE_LOCK_ID)
+						.where("token", "=", fence.token)
+						.where("generation", "=", fence.generation),
+				),
+			);
+		}
 		const result = await query.executeTakeFirst();
 		if (BigInt(result.numUpdatedRows) === 0n) return null;
 
 		return (await this.findById(id))!;
 	}
 
-	async delete(id: string, expectedRevision?: string): Promise<boolean> {
+	async delete(
+		id: string,
+		expectedRevision?: string,
+		fence?: RedirectWriteFence,
+	): Promise<boolean> {
 		let query = this.db.deleteFrom("_emdash_redirects").where("id", "=", id);
 		if (expectedRevision !== undefined) {
 			query = query.where("config_revision", "=", expectedRevision);
+		}
+		if (fence) {
+			query = query.where((eb) =>
+				eb.exists(
+					eb
+						.selectFrom("_emdash_redirect_write_lock")
+						.select("id")
+						.where("id", "=", REDIRECT_WRITE_LOCK_ID)
+						.where("token", "=", fence.token)
+						.where("generation", "=", fence.generation),
+				),
+			);
 		}
 		const result = await query.executeTakeFirst();
 		return BigInt(result.numDeletedRows) > 0n;
@@ -440,7 +480,7 @@ export class RedirectRepository {
 		oldPublishedAt?: string | null,
 		newPublishedAt?: string | null,
 	): Promise<Redirect | null> {
-		return this.withWriteLock(async () => {
+		return this.withWriteLock(async (fence) => {
 			const oldUrl = interpolateUrlPattern({
 				pattern: urlPattern,
 				collection,
@@ -460,28 +500,44 @@ export class RedirectRepository {
 			if (oldUrl === newUrl) return null;
 
 			// Collapse chains: update any existing redirects pointing to the old URL
-			await this.collapseChains(oldUrl, newUrl);
+			await this.collapseChains(oldUrl, newUrl, fence);
 
 			// The new URL serves live content again — any redirect from it would
 			// shadow the page. This also removes the self-redirect that chain
 			// collapsing produces when a rename A → B is reverted (A → A).
-			await this.db.deleteFrom("_emdash_redirects").where("source", "=", newUrl).execute();
+			await this.db
+				.deleteFrom("_emdash_redirects")
+				.where("source", "=", newUrl)
+				.where((eb) =>
+					eb.exists(
+						eb
+							.selectFrom("_emdash_redirect_write_lock")
+							.select("id")
+							.where("id", "=", REDIRECT_WRITE_LOCK_ID)
+							.where("token", "=", fence.token)
+							.where("generation", "=", fence.generation),
+					),
+				)
+				.execute();
 
 			// Check if a redirect from this source already exists
 			const existing = await this.findBySource(oldUrl);
 			if (existing) {
 				// Update the existing redirect to point to the new URL
-				return (await this.update(existing.id, { destination: newUrl }))!;
+				return (await this.update(existing.id, { destination: newUrl }, undefined, fence))!;
 			}
 
-			return this.create({
-				source: oldUrl,
-				destination: newUrl,
-				type: 301,
-				isPattern: false,
-				auto: true,
-				groupName: "Auto: slug change",
-			});
+			return this.create(
+				{
+					source: oldUrl,
+					destination: newUrl,
+					type: 301,
+					isPattern: false,
+					auto: true,
+					groupName: "Auto: slug change",
+				},
+				fence,
+			);
 		});
 	}
 
@@ -490,16 +546,32 @@ export class RedirectRepository {
 	 * to point to newDestination instead. Prevents redirect chains.
 	 * Returns the number of updated rows.
 	 */
-	async collapseChains(oldDestination: string, newDestination: string): Promise<number> {
-		const result = await this.db
+	async collapseChains(
+		oldDestination: string,
+		newDestination: string,
+		fence?: RedirectWriteFence,
+	): Promise<number> {
+		let query = this.db
 			.updateTable("_emdash_redirects")
 			.set({
 				destination: newDestination,
 				updated_at: new Date().toISOString(),
 				config_revision: ulid(),
 			})
-			.where("destination", "=", oldDestination)
-			.executeTakeFirst();
+			.where("destination", "=", oldDestination);
+		if (fence) {
+			query = query.where((eb) =>
+				eb.exists(
+					eb
+						.selectFrom("_emdash_redirect_write_lock")
+						.select("id")
+						.where("id", "=", REDIRECT_WRITE_LOCK_ID)
+						.where("token", "=", fence.token)
+						.where("generation", "=", fence.generation),
+				),
+			);
+		}
+		const result = await query.executeTakeFirst();
 		return Number(result.numUpdatedRows);
 	}
 

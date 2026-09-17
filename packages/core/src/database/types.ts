@@ -728,6 +728,7 @@ export interface RedirectTable {
 	auto: number; // boolean: system-generated from slug change
 	config_revision: string;
 	source_guard: number;
+	write_generation: number;
 	created_at: string;
 	updated_at: string;
 }
@@ -736,6 +737,7 @@ export interface RedirectWriteLockTable {
 	id: number;
 	token: string;
 	expires_at: number;
+	generation: number;
 }
 
 export interface NotFoundLogTable {
