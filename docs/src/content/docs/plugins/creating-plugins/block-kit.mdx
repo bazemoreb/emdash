@@ -94,8 +94,8 @@ const plugin: SandboxedPlugin = {
 				}
 
 				if (interaction.type === "form_submit" && interaction.action_id === "save") {
-					await ctx.kv.set("settings:apiUrl", interaction.values.api_url);
-					await ctx.kv.set("settings:enabled", interaction.values.enabled);
+					await ctx.settings.set("apiUrl", interaction.values.api_url);
+					await ctx.settings.set("enabled", interaction.values.enabled);
 					return {
 						...renderSettings(),
 						toast: { message: "Settings saved", type: "success" },
@@ -205,7 +205,7 @@ Form fields can be conditionally shown based on other field values:
 
 The `api_key` field only appears when `auth_enabled` is toggled on. Conditions are evaluated client-side with no round-trip.
 
-`secret_input` uses `has_value: true` to show that a value already exists; it does not accept or return the stored value on page load. The field masks typing in the browser, but it does not encrypt a value written to `ctx.kv`. Follow [Secret settings](/plugins/creating-plugins/settings/#secret-values) before storing credentials.
+`secret_input` uses `has_value: true` to show that a value already exists; it does not accept or return the stored value on page load. The field masks typing in the browser. Declare the matching key as `type: "secret"` in `admin.settingsSchema` and save it through `ctx.settings` so EmDash encrypts it. Follow [Secret settings](/plugins/creating-plugins/settings/#secret-values) before storing credentials.
 
 ## Try it
 

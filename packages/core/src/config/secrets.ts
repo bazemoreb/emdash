@@ -4,8 +4,9 @@
  * Single source of truth for site-level cryptographic secrets:
  *
  * - `EMDASH_ENCRYPTION_KEY` — primary key for encrypting plugin secrets at
- *   rest. Multi-key (comma-separated) for rotation forward-compat. v1 ships
- *   single-key. Format: `emdash_enc_v1_<43 base64url chars>` representing
+ *   rest. A comma-separated list supports rotation: the first key encrypts
+ *   new values and every listed key remains available for decryption. Format:
+ *   `emdash_enc_v1_<43 base64url chars>` representing
  *   32 random bytes. **Operator-provided; never stored in the database.**
  *   Losing the key means losing every secret encrypted with it. Validated
  *   at runtime startup via `validateEncryptionKeyAtStartup` — request-time
@@ -123,8 +124,8 @@ export interface ResolveSecretsOptions {
 /** Environment-variable shape consulted by the resolver. */
 export interface SecretsEnv {
 	/**
-	 * Read by `validateEncryptionKeyAtStartup` and (in a follow-up PR) by the
-	 * plugin-secret encryption layer. **Not** consulted by `resolveSecrets`,
+	 * Read by `validateEncryptionKeyAtStartup` and the plugin-secret encryption
+	 * layer. **Not** consulted by `resolveSecrets`,
 	 * so a malformed value can't 500 the preview/comment hot paths.
 	 */
 	EMDASH_ENCRYPTION_KEY?: string;
@@ -249,7 +250,9 @@ export async function parseEncryptionKeys(
  * not on the anonymous request path, and a missing or malformed key must only
  * fail operations that need encrypted plugin settings.
  */
-export function resolvePluginEncryptionKeys(env?: SecretsEnv): Promise<ParsedEncryptionKey[] | null> {
+export function resolvePluginEncryptionKeys(
+	env?: SecretsEnv,
+): Promise<ParsedEncryptionKey[] | null> {
 	return parseEncryptionKeys((env ?? readDefaultEnv()).EMDASH_ENCRYPTION_KEY);
 }
 
@@ -356,7 +359,8 @@ export async function resolveSecrets(options: ResolveSecretsOptions): Promise<Re
  * the key is currently inert (no consumers), and the follow-up PR that
  * actually uses it will throw at point of use. This way, deployment
  * mistakes surface immediately in startup logs without wedging unrelated
- * request paths in the meantime.
+ * request paths in the meantime. Plugin secret-setting operations fail closed
+ * at their own boundary when the key is invalid.
  *
  * Returns `true` if the key is unset or valid, `false` if it was malformed.
  */
@@ -369,7 +373,7 @@ export async function validateEncryptionKeyAtStartup(env?: SecretsEnv): Promise<
 		if (error instanceof EmDashSecretsError) {
 			console.error(
 				`[emdash] EMDASH_ENCRYPTION_KEY is invalid: ${error.message} ` +
-					"Plugin-secret encryption will fail once it ships. " +
+					"Plugin secret settings are unavailable until this is fixed. " +
 					"Generate a fresh key with `emdash secrets generate`.",
 			);
 			return false;

@@ -68,14 +68,14 @@ const plugin: SandboxedPlugin = {
 				if (!parsed.success) return { blocks: [] };
 				const interaction = parsed.data;
 				if (interaction.type === "form_submit" && interaction.action_id === "save") {
-					await ctx.kv.set("settings:enabled", interaction.values.enabled === true);
+					await ctx.settings.set("enabled", interaction.values.enabled === true);
 					return {
 						...settingsForm(interaction.values.enabled === true),
 						toast: { type: "success", message: "Settings saved" },
 					};
 				}
 
-				const enabled = (await ctx.kv.get<boolean>("settings:enabled")) ?? false;
+				const enabled = (await ctx.settings.get<boolean>("enabled")) ?? false;
 				return settingsForm(enabled);
 			},
 		},
@@ -87,9 +87,9 @@ export default plugin;
 
 Validate interactions before production side effects; `routeCtx.input` is `unknown`. Read [Block Kit](./block-kit.md) for exact interaction, block, and element shapes.
 
-The plugin CLI preserves `admin.settingsSchema` in the registry manifest and generated descriptor, so the host can generate a settings form. Both sandbox bridges route `settings:*` KV keys through the same options records as that form. Read a generated setting with `ctx.kv.get("settings:<key>")`; writes, deletes, list operations, and revision-based operations use the same namespace on Cloudflare and Node/workerd.
+The plugin CLI preserves `admin.settingsSchema` in the registry manifest and generated descriptor, so the host can generate a settings form. Both sandbox bridges route `ctx.settings` through the same options records as that form. Read a generated setting with `ctx.settings.get("<key>")`; writes, deletes, list operations, and revision-based operations use the same namespace on Cloudflare and Node/workerd.
 
-The `secret` settings field is write-only in the admin response, but EmDash does not currently provide encrypted plugin settings. Do not store a credential there when encryption at rest is required.
+The `secret` settings field is write-only in the admin response and encrypted before persistence. The site must provide `EMDASH_ENCRYPTION_KEY`; missing, wrong, or tampered key material fails closed. Keep the encryption-key list with database backups. Existing `ctx.kv.get("settings:<key>")` reads remain compatible through EmDash 0.x.
 
 ## Sandboxed declarative field widgets
 

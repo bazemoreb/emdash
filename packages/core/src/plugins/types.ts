@@ -259,11 +259,14 @@ export type PluginStorage<T extends PluginStorageConfig> = {
 // =============================================================================
 
 /**
- * KV store interface - unified replacement for settings + options
+ * Plugin-scoped key-value state.
  *
  * Convention:
- * - `settings:*` - User-configurable preferences (shown in admin UI)
  * - `state:*` - Internal plugin state (not shown to users)
+ * - `cache:*` - Reusable computed or remote data
+ *
+ * The `settings:*` namespace remains a compatibility alias through EmDash
+ * 0.x. New code uses `PluginContext.settings` for user configuration.
  */
 export interface KVAccess {
 	get<T>(key: string): Promise<T | null>;
@@ -280,7 +283,7 @@ export interface KVAccess {
 	list(prefix?: string): Promise<Array<{ key: string; value: unknown }>>;
 }
 
-/** Plugin settings, keyed by the names declared in `admin.settingsSchema`. */
+/** Plugin settings. Fields declared as `secret` in `admin.settingsSchema` are encrypted. */
 export interface SettingsAccess {
 	get<T>(key: string): Promise<T | null>;
 	getVersioned<T>(key: string): Promise<VersionedValue<T> | null>;
@@ -617,7 +620,7 @@ export interface PluginContext<TStorage extends PluginStorageConfig = PluginStor
 	/** Storage collections - only if plugin declares storage */
 	storage: PluginStorage<TStorage>;
 
-	/** Key-value store for config and state */
+	/** Key-value store for internal state */
 	kv: KVAccess;
 
 	/** Plugin settings. Secret schema fields are encrypted by the host. */

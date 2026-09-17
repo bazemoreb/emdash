@@ -31,6 +31,7 @@ import type { Storage } from "../storage/types.js";
 import { assertStorageKey } from "./conditional-storage.js";
 import { CronAccessImpl } from "./cron.js";
 import type { EmailPipeline } from "./email.js";
+import { createSettingsAccess } from "./settings.js";
 import type {
 	ResolvedPlugin,
 	PluginContext,
@@ -63,7 +64,6 @@ import type {
 	TaxonomyTermInfo,
 	TaxonomyReadOptions,
 } from "./types.js";
-import { createSettingsAccess } from "./settings.js";
 
 // =============================================================================
 // KV Access
@@ -1172,7 +1172,11 @@ export class PluginContextFactory {
 		const optionsRepo = new OptionsRepository(db);
 
 		// Always available
-		const settings = createSettingsAccess(optionsRepo, plugin.id, plugin.admin.settingsSchema ?? {});
+		const settings = createSettingsAccess(
+			optionsRepo,
+			plugin.id,
+			plugin.admin.settingsSchema ?? {},
+		);
 		const kv = createKVAccess(optionsRepo, plugin.id, settings);
 		const log = createLogAccess(plugin.id);
 		const storage = createStorageAccess(db, plugin.id, plugin.storage);

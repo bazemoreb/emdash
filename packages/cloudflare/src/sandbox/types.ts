@@ -209,10 +209,7 @@ export interface PluginBridgeBinding {
 		expectedRevision: string | null,
 		value: unknown,
 	): Promise<ConditionalWriteResult>;
-	settingsCompareAndDelete(
-		key: string,
-		expectedRevision: string,
-	): Promise<ConditionalDeleteResult>;
+	settingsCompareAndDelete(key: string, expectedRevision: string): Promise<ConditionalDeleteResult>;
 	settingsDelete(key: string): Promise<boolean>;
 	settingsList(prefix?: string): Promise<Array<{ key: string; value: unknown }>>;
 	// Storage

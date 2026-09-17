@@ -1,9 +1,6 @@
+import { resolvePluginEncryptionKeys, type ParsedEncryptionKey } from "../config/secrets.js";
 import type { OptionsRepository } from "../database/repositories/options.js";
 import { decodeBase64url, encodeBase64url } from "../utils/base64.js";
-import {
-	resolvePluginEncryptionKeys,
-	type ParsedEncryptionKey,
-} from "../config/secrets.js";
 import { assertStorageKey } from "./conditional-storage.js";
 import type {
 	ConditionalDeleteResult,
@@ -57,7 +54,9 @@ export function isEncryptedPluginSetting(value: unknown): value is EncryptedPlug
 }
 
 function additionalData(pluginId: string, key: string): Uint8Array {
-	return textEncoder.encode(JSON.stringify(["emdash-plugin-setting", ENVELOPE_VERSION, pluginId, key]));
+	return textEncoder.encode(
+		JSON.stringify(["emdash-plugin-setting", ENVELOPE_VERSION, pluginId, key]),
+	);
 }
 
 function exactBuffer(bytes: Uint8Array): ArrayBuffer {
@@ -140,7 +139,8 @@ export async function decryptPluginSetting(
 	try {
 		const iv = decodeBase64url(envelope.iv);
 		const ciphertext = decodeBase64url(envelope.ciphertext);
-		if (iv.byteLength !== IV_BYTES || ciphertext.byteLength < 16) throw new Error("invalid envelope");
+		if (iv.byteLength !== IV_BYTES || ciphertext.byteLength < 16)
+			throw new Error("invalid envelope");
 		const cryptoKey = await importEncryptionKey(matched, "decrypt");
 		const plaintext = await crypto.subtle.decrypt(
 			{

@@ -34,6 +34,7 @@ describe("plugin build metadata round trip", () => {
 				admin: {
 					settingsSchema: {
 						enabled: { type: "boolean", label: "Enabled", default: true },
+						apiKey: { type: "secret", label: "API key" },
 					},
 					fieldWidgets: [
 						{
@@ -80,6 +81,10 @@ describe("plugin build metadata round trip", () => {
 			permission: "content:edit_any",
 		});
 		expect(persistedManifest.admin.fieldWidgets[0].name).toBe("event-picker");
+		expect(persistedManifest.admin.settingsSchema.apiKey).toEqual({
+			type: "secret",
+			label: "API key",
+		});
 		expect(descriptor).toMatchObject({
 			hooks: ["content:afterSave"],
 			routes: persistedManifest.routes,

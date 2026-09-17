@@ -13,11 +13,8 @@ import { OptionsRepository } from "../../database/repositories/options.js";
 import { withTransaction } from "../../database/transaction.js";
 import type { Database } from "../../database/types.js";
 import type { SandboxedPluginEntry } from "../../emdash-runtime.js";
+import { decodePluginSettingValue, encodePluginSettingValue } from "../../plugins/settings.js";
 import type { ResolvedPlugin, SettingField } from "../../plugins/types.js";
-import {
-	decodePluginSettingValue,
-	encodePluginSettingValue,
-} from "../../plugins/settings.js";
 import { ErrorCode } from "../errors.js";
 import type { ApiResult } from "../types.js";
 
@@ -121,12 +118,7 @@ async function buildSettingsResponse(
 			if (storedValue === undefined || storedValue === null) {
 				secretsSet[key] = false;
 			} else {
-				const secret = await decodePluginSettingValue<string>(
-					pluginId,
-					key,
-					storedValue,
-					schema,
-				);
+				const secret = await decodePluginSettingValue<string>(pluginId, key, storedValue, schema);
 				secretsSet[key] = secret.length > 0;
 			}
 			continue;
@@ -207,9 +199,7 @@ export async function handlePluginSettingsUpdate(
 		for (const [key, value] of Object.entries(updates)) {
 			encodedUpdates.set(
 				key,
-				value === null
-					? null
-					: await encodePluginSettingValue(pluginId, key, value, schema),
+				value === null ? null : await encodePluginSettingValue(pluginId, key, value, schema),
 			);
 		}
 

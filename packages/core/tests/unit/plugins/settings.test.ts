@@ -66,20 +66,15 @@ describe("plugin settings encryption", () => {
 		const oldKeys = await parseEncryptionKeys(oldKey);
 		const rotatedKeys = await parseEncryptionKeys(`${newKey},${oldKey}`);
 		const oldEnvelope = await encryptPluginSetting(PLUGIN_ID, "apiKey", "old-secret", oldKeys);
-		const newEnvelope = await encryptPluginSetting(
-			PLUGIN_ID,
-			"apiKey",
-			"new-secret",
-			rotatedKeys,
-		);
+		const newEnvelope = await encryptPluginSetting(PLUGIN_ID, "apiKey", "new-secret", rotatedKeys);
 
 		expect(newEnvelope.kid).toBe(rotatedKeys?.[0]?.kid);
-		await expect(
-			decryptPluginSetting(PLUGIN_ID, "apiKey", oldEnvelope, rotatedKeys),
-		).resolves.toBe("old-secret");
-		await expect(
-			decryptPluginSetting(PLUGIN_ID, "apiKey", newEnvelope, rotatedKeys),
-		).resolves.toBe("new-secret");
+		await expect(decryptPluginSetting(PLUGIN_ID, "apiKey", oldEnvelope, rotatedKeys)).resolves.toBe(
+			"old-secret",
+		);
+		await expect(decryptPluginSetting(PLUGIN_ID, "apiKey", newEnvelope, rotatedKeys)).resolves.toBe(
+			"new-secret",
+		);
 	});
 
 	it("fails closed for missing, unknown, and tampered keys without including plaintext", async () => {

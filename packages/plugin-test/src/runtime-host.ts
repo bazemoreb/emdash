@@ -92,7 +92,9 @@ export interface PluginRuntimeTestHost {
 		plugin: {
 			activate(): Promise<void>;
 			deactivate(): Promise<void>;
-			updateSettings(values: Record<string, unknown>): ReturnType<typeof handlePluginSettingsUpdate>;
+			updateSettings(
+				values: Record<string, unknown>,
+			): ReturnType<typeof handlePluginSettingsUpdate>;
 		};
 		media: { upload: EmDashRuntime["handleMediaUpload"] };
 		comments: {

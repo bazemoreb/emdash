@@ -827,9 +827,7 @@ describe("Capability Enforcement Integration (v2)", () => {
 			await ctx.settings.set("apiKey", "native-secret");
 			await expect(ctx.settings.get("apiKey")).resolves.toBe("native-secret");
 			await expect(ctx.kv.get("settings:apiKey")).resolves.toBe("native-secret");
-			const raw = await new OptionsRepository(db).get(
-				"plugin:settings-owner:settings:apiKey",
-			);
+			const raw = await new OptionsRepository(db).get("plugin:settings-owner:settings:apiKey");
 			expect(JSON.stringify(raw)).not.toContain("native-secret");
 
 			const other = factory.createContext(

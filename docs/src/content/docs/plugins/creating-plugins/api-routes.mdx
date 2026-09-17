@@ -64,7 +64,7 @@ export default plugin;
 The `SandboxedPlugin` annotation infers the route and plugin context types, so the parameters need no annotations. Sandboxed route handlers take **two arguments**: `(routeCtx, ctx)`.
 
 - `routeCtx` carries request-shaped data: `{ input, request, requestMeta }`. Its `input` remains `unknown`, so validate it before use.
-- `ctx` is the same `PluginContext` you get inside hooks — `ctx.storage`, `ctx.kv`, `ctx.content`, `ctx.http`, `ctx.log`, etc.
+- `ctx` is the same `PluginContext` you get inside hooks — `ctx.storage`, `ctx.settings`, `ctx.kv`, `ctx.content`, `ctx.http`, and `ctx.log`.
 
 ### Filtering indexed content fields
 
@@ -352,7 +352,7 @@ handler: async (routeCtx, ctx) => {
 
 ### Settings and paginated data
 
-Plugin settings use private routes, Block Kit forms, and `ctx.kv`. [Settings](/plugins/creating-plugins/settings/) provides the complete loading, validation, form, and secret-handling pattern.
+Plugin settings use private routes, Block Kit forms, and `ctx.settings`. [Settings](/plugins/creating-plugins/settings/) provides the complete loading, validation, form, and encrypted-secret pattern.
 
 Routes that list plugin data should return the cursor from `ctx.storage.<collection>.query()`. [Storage pagination](/plugins/creating-plugins/storage/#pagination) shows how to pass a cursor and drain multiple pages without exceeding the 100-item page maximum.
 
@@ -368,7 +368,7 @@ routes: {
 			if (!parsed.success) return { ok: false, error: "INVALID_CITY" };
 			if (!ctx.http) throw new Error("Network capability not granted");
 
-			const apiKey = await ctx.kv.get<string>("settings:apiKey");
+			const apiKey = await ctx.settings.get<string>("apiKey");
 			if (!apiKey) throw new Error("API key not configured");
 
 			const response = await ctx.http.fetch(

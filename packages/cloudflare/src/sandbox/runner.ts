@@ -294,7 +294,7 @@ class CloudflareSandboxedPlugin implements SandboxedPluginInstance {
 				storageCollections: Object.keys(this.manifest.storage || {}),
 				i18nConfig: getI18nConfig(),
 				storageConfig: this.manifest.storage,
-				settingsSchema: this.manifest.admin.settingsSchema,
+				settingsSchema: this.manifest.admin?.settingsSchema,
 			},
 		});
 

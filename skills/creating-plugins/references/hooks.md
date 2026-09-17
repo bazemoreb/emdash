@@ -57,7 +57,7 @@ Runs once on first install. Use to seed defaults.
 
 ```typescript
 "plugin:install": async (_event, ctx) => {
-	await ctx.kv.set("settings:enabled", true);
+	await ctx.settings.set("enabled", true);
 	await ctx.storage.items!.put("default", { name: "Default" });
 }
 ```
@@ -316,7 +316,7 @@ Implements email transport (e.g. Resend, SMTP, SES). Selected by the admin in Se
 "email:deliver": {
 	exclusive: true,
 	handler: async ({ message }, ctx) => {
-		const apiKey = await ctx.kv.get("settings:apiKey");
+		const apiKey = await ctx.settings.get("apiKey");
 		await ctx.http!.fetch("https://api.resend.com/emails", {
 			method: "POST",
 			headers: { Authorization: `Bearer ${apiKey}` },

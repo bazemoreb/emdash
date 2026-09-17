@@ -229,12 +229,7 @@ async function dispatch(
 		case "kv/delete":
 			return kvDelete(db, pluginId, requireString(body, "key"), opts.settingsSchema);
 		case "kv/list":
-			return kvList(
-				db,
-				pluginId,
-				optionalString(body, "prefix") ?? "",
-				opts.settingsSchema,
-			);
+			return kvList(db, pluginId, optionalString(body, "prefix") ?? "", opts.settingsSchema);
 		case "settings/get":
 			return kvGet(
 				db,
@@ -872,11 +867,7 @@ async function kvCompareAndSet(
 		new OptionsRepository(db),
 		pluginId,
 		opts.settingsSchema,
-	).compareAndSet(
-		key.slice(SETTINGS_KEY_PREFIX.length),
-		expectedRevision,
-		value,
-	);
+	).compareAndSet(key.slice(SETTINGS_KEY_PREFIX.length), expectedRevision, value);
 	if (result.applied) await kvDeleteLegacy(db, pluginId, key);
 	return result;
 }
@@ -895,10 +886,7 @@ async function kvCompareAndDelete(
 		new OptionsRepository(db),
 		pluginId,
 		opts.settingsSchema,
-	).compareAndDelete(
-		key.slice(SETTINGS_KEY_PREFIX.length),
-		expectedRevision,
-	);
+	).compareAndDelete(key.slice(SETTINGS_KEY_PREFIX.length), expectedRevision);
 	if (result.applied) await kvDeleteLegacy(db, pluginId, key);
 	return result;
 }

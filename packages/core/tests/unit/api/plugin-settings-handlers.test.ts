@@ -93,6 +93,7 @@ describe("plugin settings handlers", () => {
 
 	afterEach(async () => {
 		vi.unstubAllEnvs();
+		vi.restoreAllMocks();
 		await teardownTestDatabase(db);
 	});
 
@@ -138,6 +139,46 @@ describe("plugin settings handlers", () => {
 		expect(storedSecret).toMatchObject({ v: 1, kid: expect.any(String) });
 		expect(JSON.stringify(storedSecret)).not.toContain("s3cret");
 		expect(await options.get(`plugin:${PLUGIN_ID}:settings:retries`)).toBe(5);
+	});
+
+	it("fails a mixed update before writing when the encryption key is missing", async () => {
+		vi.stubEnv("EMDASH_ENCRYPTION_KEY", "");
+		const result = await handlePluginSettingsUpdate(db, PLUGIN_ID, SCHEMA, {
+			enabled: false,
+			apiKey: "must-not-be-stored",
+		});
+		expect(result).toEqual({
+			success: false,
+			error: {
+				code: "PLUGIN_SETTINGS_UPDATE_ERROR",
+				message: "Failed to update plugin settings",
+			},
+		});
+		expect(JSON.stringify(result)).not.toContain("must-not-be-stored");
+		const options = new OptionsRepository(db);
+		await expect(options.get(`plugin:${PLUGIN_ID}:settings:enabled`)).resolves.toBeNull();
+		await expect(options.get(`plugin:${PLUGIN_ID}:settings:apiKey`)).resolves.toBeNull();
+	});
+
+	it("redacts wrong-key failures from admin responses and logs", async () => {
+		await handlePluginSettingsUpdate(db, PLUGIN_ID, SCHEMA, {
+			apiKey: "must-never-appear",
+		});
+		vi.stubEnv("EMDASH_ENCRYPTION_KEY", generateEncryptionKey());
+		const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+
+		const result = await handlePluginSettingsGet(db, PLUGIN_ID, SCHEMA);
+
+		expect(result).toEqual({
+			success: false,
+			error: {
+				code: "PLUGIN_SETTINGS_READ_ERROR",
+				message: "Failed to read plugin settings",
+			},
+		});
+		expect(JSON.stringify(result)).not.toContain("must-never-appear");
+		expect(JSON.stringify(errorLog.mock.calls)).not.toContain("must-never-appear");
+		errorLog.mockRestore();
 	});
 
 	it("PUT with null clears a stored value (reverting to the default)", async () => {

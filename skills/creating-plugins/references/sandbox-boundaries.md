@@ -4,9 +4,9 @@ Registry plugins run against a capability-gated host API, not the complete trust
 
 ## Cross-runner transport caveats
 
-### Plugin settings are not encrypted
+### Encrypted settings require operator key material
 
-The generated admin form and sandbox `ctx.kv` share the `settings:*` namespace across both runners. A `secret` settings field is masked and write-only in admin responses, but the stored value is not encrypted. EmDash does not expose an encrypted settings or secrets API to registry plugins.
+The generated admin form and sandbox `ctx.settings` share one plugin-scoped namespace across both runners. A field declared as `secret` is encrypted with `EMDASH_ENCRYPTION_KEY` and remains write-only in admin responses. If the matching key is unavailable or the envelope is tampered with, reads fail instead of returning ciphertext or an empty value. Restore the database together with the encryption-key list. Existing `ctx.kv.get("settings:<key>")` reads remain a compatibility alias through EmDash 0.x.
 
 ### Cloudflare HTTP response bodies are text-decoded
 

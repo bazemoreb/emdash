@@ -226,7 +226,7 @@ export default defineConfig({
 });
 ```
 
-If your plugin accepted configuration through its factory, move that configuration to an admin settings page and read it from `ctx.kv`. Sandboxed plugin descriptors are plain objects and cannot receive constructor options. See [Settings](/plugins/creating-plugins/settings/).
+If your plugin accepted configuration through its factory, move that configuration to an admin settings page and read it from `ctx.settings`. Sandboxed plugin descriptors are plain objects and cannot receive constructor options. See [Settings](/plugins/creating-plugins/settings/).
 
 ## Verify the migrated plugin
 

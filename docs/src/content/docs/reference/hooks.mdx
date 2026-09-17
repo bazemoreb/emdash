@@ -379,8 +379,8 @@ Runs when a plugin is first installed. Use for initial setup, creating storage c
 hooks: {
   "plugin:install": async (event, ctx) => {
     // Initialize default settings
-    await ctx.kv.set("settings:enabled", true);
-    await ctx.kv.set("settings:threshold", 100);
+    await ctx.settings.set("enabled", true);
+    await ctx.settings.set("threshold", 100);
 
     ctx.log.info("Plugin installed successfully");
   },
@@ -424,7 +424,7 @@ hooks: {
 
     if (deleteData) {
       // Clean up all plugin data
-      const items = await ctx.kv.list("settings:");
+      const items = await ctx.settings.list();
       for (const { key } of items) {
         await ctx.kv.delete(key);
       }

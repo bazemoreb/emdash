@@ -97,7 +97,7 @@ This example assumes the manifest declares an `items` storage collection:
 ```typescript
 "plugin:install": async (_event, ctx) => {
 	ctx.log.info("Installing plugin...");
-	await ctx.kv.set("settings:enabled", true);
+	await ctx.settings.set("enabled", true);
 	await ctx.storage.items.put("default", { name: "Default Item" });
 },
 ```
