@@ -149,4 +149,14 @@ describe("plugin settings encryption", () => {
 			"secret-97 [REDACTED] [REDACTED]",
 		);
 	});
+
+	it("does not evaluate secret-bearing tags on non-plain log objects", () => {
+		const redactor = createPluginSecretRedactor();
+		redactor.add("apiKey", "tagged-secret");
+		class TaggedValue {}
+		const value = new TaggedValue();
+		Object.defineProperty(value, Symbol.toStringTag, { value: "tagged-secret" });
+
+		expect(redactor.redact(value)).toBe("[NonPlainObject]");
+	});
 });

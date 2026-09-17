@@ -87,7 +87,7 @@ export function createPluginSecretRedactor(): PluginSecretRedactor {
 			}
 			return redacted;
 		}
-		return Object.prototype.toString.call(value);
+		return "[NonPlainObject]";
 	};
 
 	return {
