@@ -46,7 +46,11 @@ export interface PluginSecretRedactor {
 export function createPluginSecretRedactor(): PluginSecretRedactor {
 	const secretsByKey = new Map<string, [string, string?]>();
 	const secretValues = (): string[] =>
-		[...new Set([...secretsByKey.values()].flat())].toSorted((a, b) => b.length - a.length);
+		[
+			...new Set(
+				[...secretsByKey.values()].flat().filter((value): value is string => value !== undefined),
+			),
+		].toSorted((a, b) => b.length - a.length);
 	const redactString = (value: string): string => {
 		let redacted = value;
 		for (const secret of secretValues()) {
