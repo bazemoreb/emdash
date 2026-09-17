@@ -88,12 +88,10 @@ export function createPluginSecretRedactor(): PluginSecretRedactor {
 
 	return {
 		add(key, value) {
-			if (value.length === 0) {
-				secretsByKey.delete(key);
-				return;
-			}
+			if (value.length === 0) return;
 			const current = secretsByKey.get(key)?.[0];
-			secretsByKey.set(key, current && current !== value ? [value, current] : [value]);
+			if (current === value) return;
+			secretsByKey.set(key, current ? [value, current] : [value]);
 		},
 		redact<T>(value: T): T {
 			return redactValue(value, new WeakMap()) as T;

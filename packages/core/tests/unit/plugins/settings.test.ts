@@ -138,9 +138,12 @@ describe("plugin settings encryption", () => {
 
 	it("bounds log-redaction history per declared setting", () => {
 		const redactor = createPluginSecretRedactor();
-		for (let index = 0; index < 100; index++) {
-			redactor.add("apiKey", `secret-${index}`);
-		}
+		redactor.add("apiKey", "secret-a");
+		redactor.add("apiKey", "secret-b");
+		redactor.add("apiKey", "secret-b");
+		expect(redactor.redact("secret-a secret-b")).toBe("[REDACTED] [REDACTED]");
+
+		for (let index = 0; index < 100; index++) redactor.add("apiKey", `secret-${index}`);
 
 		expect(redactor.redact("secret-97 secret-98 secret-99")).toBe(
 			"secret-97 [REDACTED] [REDACTED]",
