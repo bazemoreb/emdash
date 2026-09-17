@@ -14,6 +14,10 @@ import { withTransaction } from "../../database/transaction.js";
 import type { Database } from "../../database/types.js";
 import type { SandboxedPluginEntry } from "../../emdash-runtime.js";
 import type { ResolvedPlugin, SettingField } from "../../plugins/types.js";
+import {
+	decodePluginSettingValue,
+	encodePluginSettingValue,
+} from "../../plugins/settings.js";
 import { ErrorCode } from "../errors.js";
 import type { ApiResult } from "../types.js";
 
@@ -114,7 +118,17 @@ async function buildSettingsResponse(
 		const storedValue = stored.get(settingsKey(pluginId, key));
 
 		if (field.type === "secret") {
-			secretsSet[key] = typeof storedValue === "string" && storedValue.length > 0;
+			if (storedValue === undefined || storedValue === null) {
+				secretsSet[key] = false;
+			} else {
+				const secret = await decodePluginSettingValue<string>(
+					pluginId,
+					key,
+					storedValue,
+					schema,
+				);
+				secretsSet[key] = secret.length > 0;
+			}
 			continue;
 		}
 
@@ -189,13 +203,23 @@ export async function handlePluginSettingsUpdate(
 			}
 		}
 
+		const encodedUpdates = new Map<string, unknown>();
+		for (const [key, value] of Object.entries(updates)) {
+			encodedUpdates.set(
+				key,
+				value === null
+					? null
+					: await encodePluginSettingValue(pluginId, key, value, schema),
+			);
+		}
+
 		// Wrap the writes + read-back in a transaction so a partial failure
 		// can't leave some settings updated and others not. On D1
 		// withTransaction degrades to running the callback directly — D1 is
 		// single-writer, so per-statement atomicity still holds.
 		const data = await withTransaction(db, async (trx) => {
 			const txRepo = new OptionsRepository(trx);
-			for (const [key, value] of Object.entries(updates)) {
+			for (const [key, value] of encodedUpdates) {
 				if (value === null) {
 					await txRepo.delete(settingsKey(pluginId, key));
 				} else {

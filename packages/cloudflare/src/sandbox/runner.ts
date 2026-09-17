@@ -24,6 +24,7 @@ import {
 	type SandboxRunnerFactory,
 	type SerializedRequest,
 	type PluginManifest,
+	type SettingField,
 	type I18nConfig,
 } from "emdash";
 
@@ -58,6 +59,7 @@ export interface PluginBridgeProps {
 		string,
 		{ indexes?: Array<string | string[]>; uniqueIndexes?: Array<string | string[]> }
 	>;
+	settingsSchema?: Record<string, SettingField>;
 }
 
 /**
@@ -292,6 +294,7 @@ class CloudflareSandboxedPlugin implements SandboxedPluginInstance {
 				storageCollections: Object.keys(this.manifest.storage || {}),
 				i18nConfig: getI18nConfig(),
 				storageConfig: this.manifest.storage,
+				settingsSchema: this.manifest.admin.settingsSchema,
 			},
 		});
 

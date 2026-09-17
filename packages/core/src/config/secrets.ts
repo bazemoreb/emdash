@@ -243,6 +243,17 @@ export async function parseEncryptionKeys(
 }
 
 /**
+ * Resolve the encryption keys used for plugin secret settings.
+ *
+ * This is deliberately separate from `resolveSecrets`: plugin settings are
+ * not on the anonymous request path, and a missing or malformed key must only
+ * fail operations that need encrypted plugin settings.
+ */
+export function resolvePluginEncryptionKeys(env?: SecretsEnv): Promise<ParsedEncryptionKey[] | null> {
+	return parseEncryptionKeys((env ?? readDefaultEnv()).EMDASH_ENCRYPTION_KEY);
+}
+
+/**
  * Compute the kid for a raw key string (the env-var form including the
  * `emdash_enc_v1_` prefix). Public so the CLI's `fingerprint` subcommand
  * and admin endpoints can show kids without exposing raw keys.

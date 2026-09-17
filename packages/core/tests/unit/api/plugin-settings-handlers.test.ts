@@ -7,13 +7,14 @@
  */
 
 import type { Kysely } from "kysely";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
 	getPluginSettingsSchema,
 	handlePluginSettingsGet,
 	handlePluginSettingsUpdate,
 } from "../../../src/api/handlers/plugin-settings.js";
+import { generateEncryptionKey } from "../../../src/config/secrets.js";
 import { OptionsRepository } from "../../../src/database/repositories/options.js";
 import type { Database } from "../../../src/database/types.js";
 import type { SandboxedPluginEntry } from "../../../src/emdash-runtime.js";
@@ -86,10 +87,12 @@ describe("plugin settings handlers", () => {
 	let db: Kysely<Database>;
 
 	beforeEach(async () => {
+		vi.stubEnv("EMDASH_ENCRYPTION_KEY", generateEncryptionKey());
 		db = await setupTestDatabase();
 	});
 
 	afterEach(async () => {
+		vi.unstubAllEnvs();
 		await teardownTestDatabase(db);
 	});
 
@@ -129,9 +132,11 @@ describe("plugin settings handlers", () => {
 		expect(result.data.secretsSet).toEqual({ apiKey: true });
 		expect("apiKey" in result.data.values).toBe(false);
 
-		// Stored exactly where `ctx.kv.get("settings:{key}")` reads.
+		// Stored exactly where `ctx.settings.get()` and the compatibility alias read.
 		const options = new OptionsRepository(db);
-		expect(await options.get(`plugin:${PLUGIN_ID}:settings:apiKey`)).toBe("s3cret");
+		const storedSecret = await options.get(`plugin:${PLUGIN_ID}:settings:apiKey`);
+		expect(storedSecret).toMatchObject({ v: 1, kid: expect.any(String) });
+		expect(JSON.stringify(storedSecret)).not.toContain("s3cret");
 		expect(await options.get(`plugin:${PLUGIN_ID}:settings:retries`)).toBe(5);
 	});
 

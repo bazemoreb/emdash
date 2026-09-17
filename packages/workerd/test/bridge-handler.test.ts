@@ -80,6 +80,7 @@ describe("Bridge Handler Conformance", () => {
 	});
 
 	afterEach(async () => {
+		vi.unstubAllEnvs();
 		await db.destroy();
 		sqlite.close();
 	});
@@ -90,6 +91,7 @@ describe("Bridge Handler Conformance", () => {
 		allowedHosts?: string[];
 		storageCollections?: string[];
 		beforeContentWrite?: () => Promise<void>;
+		settingsSchema?: Record<string, { type: "secret"; label: string }>;
 	}) {
 		return createBridgeHandler({
 			pluginId: opts.pluginId ?? "test-plugin",
@@ -100,6 +102,7 @@ describe("Bridge Handler Conformance", () => {
 			db,
 			emailSend: () => null,
 			beforeContentWrite: opts.beforeContentWrite,
+			settingsSchema: opts.settingsSchema,
 		});
 	}
 
@@ -120,6 +123,44 @@ describe("Bridge Handler Conformance", () => {
 	// ── KV Operations ────────────────────────────────────────────────────
 
 	describe("KV operations", () => {
+		it("shares encrypted settings with the compatibility KV alias", async () => {
+			vi.stubEnv(
+				"EMDASH_ENCRYPTION_KEY",
+				"emdash_enc_v1_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			);
+			const handler = makeHandler({
+				settingsSchema: { apiKey: { type: "secret", label: "API key" } },
+			});
+			await call(handler, "settings/set", { key: "apiKey", value: "workerd-secret" });
+
+			expect((await call(handler, "settings/get", { key: "apiKey" })).result).toBe(
+				"workerd-secret",
+			);
+			expect((await call(handler, "kv/get", { key: "settings:apiKey" })).result).toBe(
+				"workerd-secret",
+			);
+			const stored = await db
+				.selectFrom("options" as any)
+				.select("value" as any)
+				.where("name" as any, "=", "plugin:test-plugin:settings:apiKey")
+				.executeTakeFirst();
+			expect(stored?.value).not.toContain("workerd-secret");
+			expect(JSON.parse(stored!.value)).toMatchObject({ v: 1, kid: expect.any(String) });
+		});
+
+		it("fails closed without an encryption key and redacts the submitted secret", async () => {
+			vi.stubEnv("EMDASH_ENCRYPTION_KEY", "");
+			const handler = makeHandler({
+				settingsSchema: { apiKey: { type: "secret", label: "API key" } },
+			});
+			const result = await call(handler, "settings/set", {
+				key: "apiKey",
+				value: "must-not-appear",
+			});
+			expect(result.error).toMatch(/EMDASH_ENCRYPTION_KEY/);
+			expect(JSON.stringify(result)).not.toContain("must-not-appear");
+		});
+
 		it("reads and writes admin-managed settings through ctx.kv", async () => {
 			await db
 				.insertInto("options" as any)

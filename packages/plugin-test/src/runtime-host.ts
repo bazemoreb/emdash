@@ -22,6 +22,7 @@ import {
 	dispatchPluginApiRequest,
 	EmDashRuntime,
 	getI18nConfig,
+	handlePluginSettingsUpdate,
 	setI18nConfig,
 	type UserInfo,
 } from "emdash/plugin-test-runtime";
@@ -91,6 +92,7 @@ export interface PluginRuntimeTestHost {
 		plugin: {
 			activate(): Promise<void>;
 			deactivate(): Promise<void>;
+			updateSettings(values: Record<string, unknown>): ReturnType<typeof handlePluginSettingsUpdate>;
 		};
 		media: { upload: EmDashRuntime["handleMediaUpload"] };
 		comments: {
@@ -128,6 +130,9 @@ export interface PluginRuntimeTestHost {
 			list(): Promise<Array<PluginStorageTestEntry>>;
 		};
 		setting<T = unknown>(key: string): Promise<T | null>;
+		settings: {
+			raw<T = unknown>(key: string): Promise<T | null>;
+		};
 		pluginState(): Promise<Record<string, unknown> | null>;
 		scheduledTasks(): Promise<Array<Record<string, unknown>>>;
 		media(id: string): ReturnType<EmDashRuntime["handleMediaGet"]>;
@@ -446,6 +451,13 @@ export async function createPluginRuntimeTestHost(
 					const result = await runtime.handlePluginDisable(manifest.id);
 					if (!result.success) throw new Error(result.error.message);
 				},
+				updateSettings: (values) =>
+					handlePluginSettingsUpdate(
+						runtime.db,
+						manifest.id,
+						manifest.admin.settingsSchema ?? {},
+						values,
+					),
 			},
 			media: { upload: (...args) => runtime.handleMediaUpload(...args) },
 			comments: {
@@ -522,6 +534,9 @@ export async function createPluginRuntimeTestHost(
 				list: () => readStorage("__kv"),
 			},
 			setting: (key) => optionRepo.get(`plugin:${manifest.id}:settings:${key}`),
+			settings: {
+				raw: (key) => optionRepo.get(`plugin:${manifest.id}:settings:${key}`),
+			},
 			async pluginState() {
 				const state = await runtime.db
 					.selectFrom("_plugin_state")

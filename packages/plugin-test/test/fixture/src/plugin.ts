@@ -78,8 +78,28 @@ const plugin: SandboxedPlugin = {
 		},
 		"settings-value": {
 			handler: async (_route, ctx) => ({
-				enabled: await ctx.kv.get("settings:enabled"),
+				enabled: await ctx.settings.get("enabled"),
 			}),
+		},
+		"secret-value": {
+			handler: async (_route, ctx) => ({
+				viaSettings: await ctx.settings.get("apiKey"),
+				viaCompatibilityAlias: await ctx.kv.get("settings:apiKey"),
+			}),
+		},
+		"secret-save": {
+			handler: async (route, ctx) => {
+				if (
+					typeof route.input !== "object" ||
+					route.input === null ||
+					!("apiKey" in route.input) ||
+					typeof route.input.apiKey !== "string"
+				) {
+					throw new Error("Expected an API key");
+				}
+				await ctx.settings.set("apiKey", route.input.apiKey);
+				return { saved: true };
+			},
 		},
 		"settings-update": {
 			handler: async (route, ctx) => {

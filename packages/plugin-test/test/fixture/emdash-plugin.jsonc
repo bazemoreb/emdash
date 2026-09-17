@@ -20,6 +20,7 @@
 	"admin": {
 		"settingsSchema": {
 			"enabled": { "type": "boolean", "label": "Enabled", "default": true },
+			"apiKey": { "type": "secret", "label": "API key" },
 		},
 		"fieldWidgets": [
 			{

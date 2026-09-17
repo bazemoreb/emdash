@@ -280,6 +280,21 @@ export interface KVAccess {
 	list(prefix?: string): Promise<Array<{ key: string; value: unknown }>>;
 }
 
+/** Plugin settings, keyed by the names declared in `admin.settingsSchema`. */
+export interface SettingsAccess {
+	get<T>(key: string): Promise<T | null>;
+	getVersioned<T>(key: string): Promise<VersionedValue<T> | null>;
+	compareAndSet(
+		key: string,
+		expectedRevision: string | null,
+		value: unknown,
+	): Promise<ConditionalWriteResult>;
+	compareAndDelete(key: string, expectedRevision: string): Promise<ConditionalDeleteResult>;
+	set(key: string, value: unknown): Promise<void>;
+	delete(key: string): Promise<boolean>;
+	list(prefix?: string): Promise<Array<{ key: string; value: unknown }>>;
+}
+
 /**
  * SEO metadata for a content item, as stored in the core SEO panel.
  *
@@ -604,6 +619,9 @@ export interface PluginContext<TStorage extends PluginStorageConfig = PluginStor
 
 	/** Key-value store for config and state */
 	kv: KVAccess;
+
+	/** Plugin settings. Secret schema fields are encrypted by the host. */
+	settings: SettingsAccess;
 
 	/** Content access - only if read:content or write:content capability */
 	content?: ContentAccess | ContentAccessWithWrite;

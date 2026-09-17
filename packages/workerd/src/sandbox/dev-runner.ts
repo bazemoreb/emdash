@@ -179,6 +179,7 @@ export class MiniflareDevRunner implements SandboxRunner {
 				allowedHosts: manifest.allowedHosts || [],
 				storageCollections: Object.keys(manifest.storage || {}),
 				storageConfig: manifest.storage,
+				settingsSchema: manifest.admin.settingsSchema,
 				i18nConfig: getI18nConfig(),
 				db: this.options.db,
 				beforeContentWrite: this.options.beforeContentWrite,

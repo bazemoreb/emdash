@@ -23,6 +23,7 @@ import {
 	ContentRepository,
 	CronAccessImpl,
 	createContentAccess,
+	createSettingsAccess,
 	createSandboxRouteError,
 	getSandboxRouteErrorDetails,
 	ulid,
@@ -30,6 +31,7 @@ import {
 	PluginStorageRepository,
 	StorageSerializationError,
 	resolveContentCreateLocale,
+	type SettingField,
 } from "emdash";
 import { Kysely } from "kysely";
 import { D1Dialect } from "kysely-d1";
@@ -214,6 +216,7 @@ export interface PluginBridgeProps {
 		string,
 		{ indexes?: Array<string | string[]>; uniqueIndexes?: Array<string | string[]> }
 	>;
+	settingsSchema?: Record<string, SettingField>;
 }
 
 /**
@@ -234,8 +237,12 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		);
 	}
 
-	private pluginOptionKey(key: string): string {
-		return `plugin:${this.ctx.props.pluginId}:${key}`;
+	private getSettingsAccess() {
+		return createSettingsAccess(
+			this.getOptionsRepo(),
+			this.ctx.props.pluginId,
+			this.ctx.props.settingsSchema ?? {},
+		);
 	}
 
 	private async deleteLegacyKV(key: string): Promise<boolean> {
@@ -298,7 +305,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 	async kvGet(key: string): Promise<unknown> {
 		const { pluginId } = this.ctx.props;
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			const value = await this.getOptionsRepo().get(this.pluginOptionKey(key));
+			const value = await this.getSettingsAccess().get(key.slice(SETTINGS_KEY_PREFIX.length));
 			if (value !== null) return value;
 		}
 		const result = await this.env.DB.prepare(
@@ -317,7 +324,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 	async kvSet(key: string, value: unknown): Promise<void> {
 		const { pluginId } = this.ctx.props;
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			await this.getOptionsRepo().set(this.pluginOptionKey(key), value);
+			await this.getSettingsAccess().set(key.slice(SETTINGS_KEY_PREFIX.length), value);
 			await this.deleteLegacyKV(key);
 			return;
 		}
@@ -330,7 +337,9 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 
 	async kvGetVersioned(key: string): Promise<VersionedValue | null> {
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			const value = await this.getOptionsRepo().getVersioned(this.pluginOptionKey(key));
+			const value = await this.getSettingsAccess().getVersioned(
+				key.slice(SETTINGS_KEY_PREFIX.length),
+			);
 			if (value !== null) return value;
 		}
 		return this.getStorageRepo("__kv").getVersioned(key);
@@ -342,8 +351,8 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		value: unknown,
 	): Promise<ConditionalWriteResult> {
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			const result = await this.getOptionsRepo().compareAndSet(
-				this.pluginOptionKey(key),
+			const result = await this.getSettingsAccess().compareAndSet(
+				key.slice(SETTINGS_KEY_PREFIX.length),
 				expectedRevision,
 				value,
 			);
@@ -358,8 +367,8 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		expectedRevision: string,
 	): Promise<ConditionalDeleteResult> {
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			const result = await this.getOptionsRepo().compareAndDelete(
-				this.pluginOptionKey(key),
+			const result = await this.getSettingsAccess().compareAndDelete(
+				key.slice(SETTINGS_KEY_PREFIX.length),
 				expectedRevision,
 			);
 			if (result.applied) await this.deleteLegacyKV(key);
@@ -371,7 +380,9 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 	async kvDelete(key: string): Promise<boolean> {
 		const { pluginId } = this.ctx.props;
 		if (key.startsWith(SETTINGS_KEY_PREFIX)) {
-			const optionDeleted = await this.getOptionsRepo().delete(this.pluginOptionKey(key));
+			const optionDeleted = await this.getSettingsAccess().delete(
+				key.slice(SETTINGS_KEY_PREFIX.length),
+			);
 			const legacyDeleted = await this.deleteLegacyKV(key);
 			return optionDeleted || legacyDeleted;
 		}
@@ -394,18 +405,57 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		const entries = new Map(
 			(results.results ?? []).map((row) => [row.id, JSON.parse(row.data) as unknown]),
 		);
-		const optionPrefix = `plugin:${pluginId}:`;
-		const settingsPrefix = SETTINGS_KEY_PREFIX.startsWith(prefix)
-			? `${optionPrefix}${SETTINGS_KEY_PREFIX}`
-			: prefix.startsWith(SETTINGS_KEY_PREFIX)
-				? `${optionPrefix}${prefix}`
-				: null;
-		if (settingsPrefix) {
-			for (const [name, value] of await this.getOptionsRepo().getByPrefix(settingsPrefix)) {
-				entries.set(name.slice(optionPrefix.length), value);
+		const includesSettings =
+			SETTINGS_KEY_PREFIX.startsWith(prefix) || prefix.startsWith(SETTINGS_KEY_PREFIX);
+		if (includesSettings) {
+			const settingPrefix = prefix.startsWith(SETTINGS_KEY_PREFIX)
+				? prefix.slice(SETTINGS_KEY_PREFIX.length)
+				: "";
+			for (const { key, value } of await this.getSettingsAccess().list(settingPrefix)) {
+				const fullKey = `${SETTINGS_KEY_PREFIX}${key}`;
+				if (fullKey.startsWith(prefix)) entries.set(fullKey, value);
 			}
 		}
 		return Array.from(entries, ([key, value]) => ({ key, value }));
+	}
+
+	async settingsGet(key: string): Promise<unknown> {
+		return this.kvGet(`${SETTINGS_KEY_PREFIX}${key}`);
+	}
+
+	async settingsSet(key: string, value: unknown): Promise<void> {
+		return this.kvSet(`${SETTINGS_KEY_PREFIX}${key}`, value);
+	}
+
+	async settingsGetVersioned(key: string): Promise<VersionedValue | null> {
+		return this.kvGetVersioned(`${SETTINGS_KEY_PREFIX}${key}`);
+	}
+
+	async settingsCompareAndSet(
+		key: string,
+		expectedRevision: string | null,
+		value: unknown,
+	): Promise<ConditionalWriteResult> {
+		return this.kvCompareAndSet(`${SETTINGS_KEY_PREFIX}${key}`, expectedRevision, value);
+	}
+
+	async settingsCompareAndDelete(
+		key: string,
+		expectedRevision: string,
+	): Promise<ConditionalDeleteResult> {
+		return this.kvCompareAndDelete(`${SETTINGS_KEY_PREFIX}${key}`, expectedRevision);
+	}
+
+	async settingsDelete(key: string): Promise<boolean> {
+		return this.kvDelete(`${SETTINGS_KEY_PREFIX}${key}`);
+	}
+
+	async settingsList(prefix = ""): Promise<Array<{ key: string; value: unknown }>> {
+		const entries = await this.kvList(`${SETTINGS_KEY_PREFIX}${prefix}`);
+		return entries.map(({ key, value }) => ({
+			key: key.slice(SETTINGS_KEY_PREFIX.length),
+			value,
+		}));
 	}
 
 	// =========================================================================

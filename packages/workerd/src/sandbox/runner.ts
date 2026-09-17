@@ -957,6 +957,13 @@ export class WorkerdSandboxRunner implements SandboxRunner {
 		return undefined;
 	}
 
+	getPluginSettingsSchema(
+		pluginId: string,
+		version: string,
+	): PluginManifest["admin"]["settingsSchema"] | undefined {
+		return this.plugins.get(`${pluginId}:${version}`)?.manifest.admin.settingsSchema;
+	}
+
 	/** Get the current epoch (incremented on each workerd restart) */
 	get currentEpoch() {
 		return this.epoch;

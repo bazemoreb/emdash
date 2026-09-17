@@ -112,6 +112,16 @@ function createContext(env) {
 		delete: (key) => bridge.kvDelete(key),
 		list: (prefix) => bridge.kvList(prefix)
 	};
+
+	const settings = {
+		get: (key) => bridge.settingsGet(key),
+		set: (key, value) => bridge.settingsSet(key, value),
+		getVersioned: (key) => bridge.settingsGetVersioned(key),
+		compareAndSet: (key, expectedRevision, value) => bridge.settingsCompareAndSet(key, expectedRevision, value),
+		compareAndDelete: (key, expectedRevision) => bridge.settingsCompareAndDelete(key, expectedRevision),
+		delete: (key) => bridge.settingsDelete(key),
+		list: (prefix) => bridge.settingsList(prefix)
+	};
 	
 	// Storage collection factory
 	function createStorageCollection(collectionName) {
@@ -232,6 +242,7 @@ function createContext(env) {
 		},
 		storage,
 		kv,
+		settings,
 		content,
 		taxonomies,
 		media,

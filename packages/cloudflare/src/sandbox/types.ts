@@ -200,6 +200,21 @@ export interface PluginBridgeBinding {
 	kvCompareAndDelete(key: string, expectedRevision: string): Promise<ConditionalDeleteResult>;
 	kvDelete(key: string): Promise<boolean>;
 	kvList(prefix?: string): Promise<Array<{ key: string; value: unknown }>>;
+	// Settings
+	settingsGet(key: string): Promise<unknown>;
+	settingsSet(key: string, value: unknown): Promise<void>;
+	settingsGetVersioned(key: string): Promise<VersionedValue | null>;
+	settingsCompareAndSet(
+		key: string,
+		expectedRevision: string | null,
+		value: unknown,
+	): Promise<ConditionalWriteResult>;
+	settingsCompareAndDelete(
+		key: string,
+		expectedRevision: string,
+	): Promise<ConditionalDeleteResult>;
+	settingsDelete(key: string): Promise<boolean>;
+	settingsList(prefix?: string): Promise<Array<{ key: string; value: unknown }>>;
 	// Storage
 	storageGet(collection: string, id: string): Promise<unknown>;
 	storagePut(collection: string, id: string, data: unknown): Promise<void>;

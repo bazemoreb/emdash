@@ -302,4 +302,5 @@ export type {
 	VersionedValue,
 	ConditionalWriteResult,
 	ConditionalDeleteResult,
+	SettingsAccess,
 } from "./plugins/types.js";
