@@ -87,7 +87,7 @@ export function createPluginSecretRedactor(): PluginSecretRedactor {
 			}
 			return redacted;
 		}
-		return redactString(String(value));
+		return Object.prototype.toString.call(value);
 	};
 
 	return {
@@ -98,6 +98,7 @@ export function createPluginSecretRedactor(): PluginSecretRedactor {
 			secretsByKey.set(key, current ? [value, current] : [value]);
 		},
 		redact<T>(value: T): T {
+			// eslint-disable-next-line typescript/no-unsafe-type-assertion -- redaction preserves the logged value's outer API shape
 			return redactValue(value, new WeakMap()) as T;
 		},
 	};
@@ -105,16 +106,19 @@ export function createPluginSecretRedactor(): PluginSecretRedactor {
 
 export function isEncryptedPluginSetting(value: unknown): value is EncryptedPluginSetting {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-	const envelope = value as Record<string, unknown>;
 	return (
-		Object.keys(envelope).length === 4 &&
-		envelope.v === ENVELOPE_VERSION &&
-		typeof envelope.kid === "string" &&
-		KEY_ID_PATTERN.test(envelope.kid) &&
-		typeof envelope.iv === "string" &&
-		BASE64URL_PATTERN.test(envelope.iv) &&
-		typeof envelope.ciphertext === "string" &&
-		BASE64URL_PATTERN.test(envelope.ciphertext)
+		Object.keys(value).length === 4 &&
+		"v" in value &&
+		value.v === ENVELOPE_VERSION &&
+		"kid" in value &&
+		typeof value.kid === "string" &&
+		KEY_ID_PATTERN.test(value.kid) &&
+		"iv" in value &&
+		typeof value.iv === "string" &&
+		BASE64URL_PATTERN.test(value.iv) &&
+		"ciphertext" in value &&
+		typeof value.ciphertext === "string" &&
+		BASE64URL_PATTERN.test(value.ciphertext)
 	);
 }
 
@@ -263,10 +267,12 @@ export async function decodePluginSettingValue<T = unknown>(
 				"Encrypted plugin setting is not declared as a secret",
 			);
 		}
+		// eslint-disable-next-line typescript/no-unsafe-type-assertion -- caller supplies the expected non-secret setting type
 		return value as T;
 	}
 	if (typeof value === "string") {
 		onSecret?.(key, value);
+		// eslint-disable-next-line typescript/no-unsafe-type-assertion -- secret schema guarantees a string and caller supplies its compatible type
 		return value as T;
 	}
 	if (!isEncryptedPluginSetting(value)) {
@@ -277,6 +283,7 @@ export async function decodePluginSettingValue<T = unknown>(
 	}
 	const decrypted = await decryptPluginSetting(pluginId, key, value, keys);
 	onSecret?.(key, decrypted);
+	// eslint-disable-next-line typescript/no-unsafe-type-assertion -- secret schema guarantees a string and caller supplies its compatible type
 	return decrypted as T;
 }
 
