@@ -469,6 +469,7 @@ export async function createPluginRuntimeTestHost(
 						group_name: redirect.groupName,
 						auto: redirect.auto ? 1 : 0,
 						config_revision: configRevision,
+						source_guard: 1,
 						created_at: now,
 						updated_at: now,
 					})

@@ -4,6 +4,7 @@ import { afterEach, beforeEach, expect, it } from "vitest";
 import { RedirectRepository } from "../../../src/database/repositories/redirect.js";
 import type { Database } from "../../../src/database/types.js";
 import { createRedirectAccess } from "../../../src/plugins/context.js";
+import { detectLoops } from "../../../src/redirects/loops.js";
 import {
 	type DialectTestContext,
 	describeEachDialect,
@@ -41,5 +42,59 @@ describeEachDialect("plugin redirect optimistic concurrency", (dialect) => {
 				_rev: created._rev,
 			}),
 		).rejects.toMatchObject({ code: "CONFLICT" });
+	});
+
+	it("serializes concurrent duplicate and loop-forming creates", async () => {
+		const access = createRedirectAccess(db, true);
+		const duplicates = await Promise.allSettled([
+			access.create({ source: "/same", destination: "/first" }),
+			access.create({ source: "/same", destination: "/second" }),
+		]);
+		expect(duplicates.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+		expect(duplicates.filter((result) => result.status === "rejected")).toHaveLength(1);
+
+		const loop = await Promise.allSettled([
+			access.create({ source: "/a", destination: "/b" }),
+			access.create({ source: "/b", destination: "/a" }),
+		]);
+		expect(loop.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+		expect(loop.filter((result) => result.status === "rejected")).toHaveLength(1);
+		const redirects = await new RedirectRepository(db).findAllEnabled();
+		expect(
+			detectLoops(
+				redirects.map((redirect) => ({
+					id: redirect.id,
+					source: redirect.source,
+					destination: redirect.destination,
+					enabled: redirect.enabled,
+					isPattern: redirect.isPattern,
+				})),
+			),
+		).toEqual([]);
+	});
+
+	it("serializes concurrent updates to different rows", async () => {
+		const access = createRedirectAccess(db, true);
+		const left = await access.create({ source: "/left", destination: "/safe-left" });
+		const right = await access.create({ source: "/right", destination: "/safe-right" });
+		const results = await Promise.allSettled([
+			access.update(left.redirect.id, { destination: "/right", _rev: left._rev }),
+			access.update(right.redirect.id, { destination: "/left", _rev: right._rev }),
+		]);
+		expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+		expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+
+		const redirects = await new RedirectRepository(db).findAllEnabled();
+		expect(
+			detectLoops(
+				redirects.map((redirect) => ({
+					id: redirect.id,
+					source: redirect.source,
+					destination: redirect.destination,
+					enabled: redirect.enabled,
+					isPattern: redirect.isPattern,
+				})),
+			),
+		).toEqual([]);
 	});
 });

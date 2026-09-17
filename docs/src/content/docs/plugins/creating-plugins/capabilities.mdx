@@ -78,7 +78,7 @@ The following example updates a redirect only if it has not changed since the re
 ```ts title="src/plugin.ts"
 const current = await ctx.redirects!.get(redirectId);
 if (current) {
-	await ctx.redirects!.update(redirectId, {
+	await ctx.redirects!.update!(redirectId, {
 		destination: "/guides/current",
 		_rev: current._rev,
 	});

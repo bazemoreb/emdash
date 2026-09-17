@@ -122,8 +122,24 @@ async function runMigrations(db: Kysely<any>) {
 		.addColumn("group_name", "text")
 		.addColumn("auto", "integer", (col) => col.notNull())
 		.addColumn("config_revision", "text", (col) => col.notNull())
+		.addColumn("source_guard", "integer", (col) => col.notNull())
 		.addColumn("created_at", "text", (col) => col.notNull())
 		.addColumn("updated_at", "text", (col) => col.notNull())
+		.execute();
+	await sql`
+		CREATE UNIQUE INDEX idx_redirects_managed_source
+		ON _emdash_redirects (source)
+		WHERE source_guard = 1
+	`.execute(db);
+	await db.schema
+		.createTable("_emdash_redirect_write_lock")
+		.addColumn("id", "integer", (col) => col.primaryKey())
+		.addColumn("token", "text", (col) => col.notNull())
+		.addColumn("expires_at", "integer", (col) => col.notNull())
+		.execute();
+	await db
+		.insertInto("_emdash_redirect_write_lock" as any)
+		.values({ id: 1, token: "", expires_at: 0 })
 		.execute();
 
 	// Content table for posts (created by SchemaRegistry in real code)
@@ -222,6 +238,12 @@ describe("Plugin integration: sandboxed-test plugin operations", () => {
 		return response.json() as Promise<{ result?: unknown; error?: string }>;
 	}
 
+	function bridgeResultState(result: { result?: unknown }): boolean | undefined {
+		const value = result.result;
+		if (typeof value !== "object" || value === null || !("ok" in value)) return undefined;
+		return value.ok === true ? true : value.ok === false ? false : undefined;
+	}
+
 	// ── Mirrors sandboxed-test plugin's kv/test route ────────────────────
 
 	it("KV round-trip: set, get, delete", async () => {
@@ -284,6 +306,17 @@ describe("Plugin integration: sandboxed-test plugin operations", () => {
 			ok: false,
 			error: { code: "VALIDATION_ERROR" },
 		});
+
+		const concurrent = await Promise.all([
+			call(handler, "redirect/create", {
+				input: { source: "/same", destination: "/first" },
+			}),
+			call(handler, "redirect/create", {
+				input: { source: "/same", destination: "/second" },
+			}),
+		]);
+		expect(concurrent.filter((result) => bridgeResultState(result) === true)).toHaveLength(1);
+		expect(concurrent.filter((result) => bridgeResultState(result) === false)).toHaveLength(1);
 	});
 
 	it("denies redirect reads without redirects:read", async () => {

@@ -100,6 +100,19 @@ export interface RedirectMatch {
 	resolvedDestination: string;
 }
 
+export interface VersionedRedirectRecord {
+	redirect: Redirect;
+	configRevision: string;
+}
+
+export class RedirectWriteBusyError extends Error {
+	override readonly name = "RedirectWriteBusyError";
+}
+
+const REDIRECT_WRITE_LOCK_ID = 1;
+const REDIRECT_WRITE_LEASE_MS = 30_000;
+const REDIRECT_WRITE_LOCK_ATTEMPTS = 5;
+
 // ---------------------------------------------------------------------------
 // Row mapping
 // ---------------------------------------------------------------------------
@@ -131,12 +144,16 @@ export class RedirectRepository {
 	// --- CRUD ---------------------------------------------------------------
 
 	async findById(id: string): Promise<Redirect | null> {
+		return (await this.findVersionedById(id))?.redirect ?? null;
+	}
+
+	async findVersionedById(id: string): Promise<VersionedRedirectRecord | null> {
 		const row = await this.db
 			.selectFrom("_emdash_redirects")
 			.selectAll()
 			.where("id", "=", id)
 			.executeTakeFirst();
-		return row ? rowToRedirect(row) : null;
+		return row ? { redirect: rowToRedirect(row), configRevision: row.config_revision } : null;
 	}
 
 	async findBySource(source: string): Promise<Redirect | null> {
@@ -155,6 +172,42 @@ export class RedirectRepository {
 			.where("id", "=", id)
 			.executeTakeFirst();
 		return row?.config_revision ?? null;
+	}
+
+	async withWriteLock<T>(action: () => Promise<T>): Promise<T> {
+		const token = ulid();
+		let acquired = false;
+		for (let attempt = 0; attempt < REDIRECT_WRITE_LOCK_ATTEMPTS; attempt++) {
+			const now = Date.now();
+			const result = await this.db
+				.updateTable("_emdash_redirect_write_lock")
+				.set({ token, expires_at: now + REDIRECT_WRITE_LEASE_MS })
+				.where("id", "=", REDIRECT_WRITE_LOCK_ID)
+				.where((eb) => eb.or([eb("token", "=", ""), eb("expires_at", "<", now)]))
+				.executeTakeFirst();
+			if (BigInt(result.numUpdatedRows) > 0n) {
+				acquired = true;
+				break;
+			}
+			await new Promise((resolve) => setTimeout(resolve, 10 * 2 ** attempt));
+		}
+		if (!acquired) {
+			throw new RedirectWriteBusyError("Another redirect change is in progress");
+		}
+		try {
+			return await action();
+		} finally {
+			try {
+				await this.db
+					.updateTable("_emdash_redirect_write_lock")
+					.set({ token: "", expires_at: 0 })
+					.where("id", "=", REDIRECT_WRITE_LOCK_ID)
+					.where("token", "=", token)
+					.execute();
+			} catch (error) {
+				console.error("Failed to release redirect write lock:", error);
+			}
+		}
 	}
 
 	async findMany(opts: {
@@ -240,6 +293,7 @@ export class RedirectRepository {
 				group_name: input.groupName ?? null,
 				auto: input.auto ? 1 : 0,
 				config_revision: ulid(),
+				source_guard: 1,
 				created_at: now,
 				updated_at: now,
 			})
@@ -263,6 +317,7 @@ export class RedirectRepository {
 
 		if (input.source !== undefined) {
 			values.source = input.source;
+			values.source_guard = 1;
 			values.is_pattern =
 				input.isPattern !== undefined ? (input.isPattern ? 1 : 0) : isPattern(input.source) ? 1 : 0;
 		} else if (input.isPattern !== undefined) {
@@ -385,46 +440,48 @@ export class RedirectRepository {
 		oldPublishedAt?: string | null,
 		newPublishedAt?: string | null,
 	): Promise<Redirect | null> {
-		const oldUrl = interpolateUrlPattern({
-			pattern: urlPattern,
-			collection,
-			slug: oldSlug,
-			id: contentId,
-			date: oldPublishedAt,
-		});
-		const newUrl = interpolateUrlPattern({
-			pattern: urlPattern,
-			collection,
-			slug: newSlug,
-			id: contentId,
-			date: newPublishedAt,
-		});
+		return this.withWriteLock(async () => {
+			const oldUrl = interpolateUrlPattern({
+				pattern: urlPattern,
+				collection,
+				slug: oldSlug,
+				id: contentId,
+				date: oldPublishedAt,
+			});
+			const newUrl = interpolateUrlPattern({
+				pattern: urlPattern,
+				collection,
+				slug: newSlug,
+				id: contentId,
+				date: newPublishedAt,
+			});
 
-		// A redirect from a URL to itself would make the page unreachable
-		if (oldUrl === newUrl) return null;
+			// A redirect from a URL to itself would make the page unreachable
+			if (oldUrl === newUrl) return null;
 
-		// Collapse chains: update any existing redirects pointing to the old URL
-		await this.collapseChains(oldUrl, newUrl);
+			// Collapse chains: update any existing redirects pointing to the old URL
+			await this.collapseChains(oldUrl, newUrl);
 
-		// The new URL serves live content again — any redirect from it would
-		// shadow the page. This also removes the self-redirect that chain
-		// collapsing produces when a rename A → B is reverted (A → A).
-		await this.db.deleteFrom("_emdash_redirects").where("source", "=", newUrl).execute();
+			// The new URL serves live content again — any redirect from it would
+			// shadow the page. This also removes the self-redirect that chain
+			// collapsing produces when a rename A → B is reverted (A → A).
+			await this.db.deleteFrom("_emdash_redirects").where("source", "=", newUrl).execute();
 
-		// Check if a redirect from this source already exists
-		const existing = await this.findBySource(oldUrl);
-		if (existing) {
-			// Update the existing redirect to point to the new URL
-			return (await this.update(existing.id, { destination: newUrl }))!;
-		}
+			// Check if a redirect from this source already exists
+			const existing = await this.findBySource(oldUrl);
+			if (existing) {
+				// Update the existing redirect to point to the new URL
+				return (await this.update(existing.id, { destination: newUrl }))!;
+			}
 
-		return this.create({
-			source: oldUrl,
-			destination: newUrl,
-			type: 301,
-			isPattern: false,
-			auto: true,
-			groupName: "Auto: slug change",
+			return this.create({
+				source: oldUrl,
+				destination: newUrl,
+				type: 301,
+				isPattern: false,
+				auto: true,
+				groupName: "Auto: slug change",
+			});
 		});
 	}
 

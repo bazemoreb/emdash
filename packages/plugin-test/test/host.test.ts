@@ -182,6 +182,24 @@ describe("runtime plugin test host", () => {
 		});
 		expect(created._rev).not.toContain(created.redirect.id);
 
+		const concurrent = await Promise.all([
+			request<{ redirect?: { source: string }; error?: { code: string } }>({
+				operation: "create",
+				redirect: { source: "/concurrent", destination: "/first" },
+			}),
+			request<{ redirect?: { source: string }; error?: { code: string } }>({
+				operation: "create",
+				redirect: { source: "/concurrent", destination: "/second" },
+			}),
+		]);
+		expect(concurrent.filter((result) => result.redirect)).toHaveLength(1);
+		expect(concurrent.filter((result) => result.error)).toHaveLength(1);
+		expect(
+			(await runtimeHost.inspect.redirects()).filter(
+				(redirect) => redirect.source === "/concurrent",
+			),
+		).toHaveLength(1);
+
 		const blockedMarker = await request<{ error: { code: string } }>({
 			operation: "create",
 			redirect: { source: "/forged", destination: "/target", auto: true },
@@ -210,7 +228,7 @@ describe("runtime plugin test host", () => {
 		});
 		expect(readAfterRestart.redirect.destination).toBe("/latest");
 
-		await expect(runtimeHost.inspect.redirects()).resolves.toHaveLength(2);
+		await expect(runtimeHost.inspect.redirects()).resolves.toHaveLength(3);
 		await expect(
 			request<{ deleted: boolean }>({
 				operation: "delete",
@@ -218,9 +236,13 @@ describe("runtime plugin test host", () => {
 				_rev: readAfterRestart._rev,
 			}),
 		).resolves.toEqual({ deleted: true });
-		await expect(runtimeHost.inspect.redirects()).resolves.toEqual([
-			expect.objectContaining({ source: "/automatic-old", auto: true }),
-		]);
+		await expect(runtimeHost.inspect.redirects()).resolves.toHaveLength(2);
+		await expect(runtimeHost.inspect.redirects()).resolves.toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({ source: "/automatic-old", auto: true }),
+				expect.objectContaining({ source: "/concurrent", auto: false }),
+			]),
+		);
 	});
 
 	it("runs lifecycle, media, comment, scheduler, and email journeys through the isolate", async () => {

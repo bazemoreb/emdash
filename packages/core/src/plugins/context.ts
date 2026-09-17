@@ -11,7 +11,6 @@ import { ulid } from "ulidx";
 import {
 	handleRedirectCreate,
 	handleRedirectDelete,
-	handleRedirectGet,
 	handleRedirectList,
 	handleRedirectUpdate,
 } from "../api/handlers/redirects.js";
@@ -21,7 +20,11 @@ import { EntryLockRepository } from "../database/repositories/entry-locks.js";
 import { MediaRepository } from "../database/repositories/media.js";
 import { OptionsRepository } from "../database/repositories/options.js";
 import { PluginStorageRepository } from "../database/repositories/plugin-storage.js";
-import { RedirectRepository, type Redirect } from "../database/repositories/redirect.js";
+import {
+	RedirectRepository,
+	type Redirect,
+	type VersionedRedirectRecord,
+} from "../database/repositories/redirect.js";
 import { SeoRepository } from "../database/repositories/seo.js";
 import { TaxonomyRepository, type Taxonomy } from "../database/repositories/taxonomy.js";
 import { UserRepository } from "../database/repositories/user.js";
@@ -443,18 +446,19 @@ function toRedirectInfo(redirect: Redirect): RedirectInfo {
 	};
 }
 
-async function toVersionedRedirect(
-	repo: RedirectRepository,
-	redirect: Redirect,
-): Promise<VersionedRedirect> {
-	const revision = await repo.findConfigRevision(redirect.id);
-	if (revision === null) {
-		throw new RedirectAccessError("NOT_FOUND", `Redirect "${redirect.id}" not found`);
-	}
+function toVersionedRedirect(record: VersionedRedirectRecord): VersionedRedirect {
 	return {
-		redirect: toRedirectInfo(redirect),
-		_rev: encodeRedirectRevision(redirect.id, revision),
+		redirect: toRedirectInfo(record.redirect),
+		_rev: encodeRedirectRevision(record.redirect.id, record.configRevision),
 	};
+}
+
+async function readVersionedRedirect(
+	repo: RedirectRepository,
+	id: string,
+): Promise<VersionedRedirect | null> {
+	const record = await repo.findVersionedById(id);
+	return record ? toVersionedRedirect(record) : null;
 }
 
 function throwRedirectResult(error: { code: string; message: string }): never {
@@ -490,14 +494,7 @@ export function createRedirectAccess(
 				hasMore: result.data.nextCursor !== undefined,
 			};
 		},
-		async get(id: string) {
-			const result = await handleRedirectGet(db, id);
-			if (!result.success) {
-				if (result.error.code === "NOT_FOUND") return null;
-				return throwRedirectResult(result.error);
-			}
-			return toVersionedRedirect(repo, result.data);
-		},
+		get: (id: string) => readVersionedRedirect(repo, id),
 	};
 	if (!writable) return readAccess;
 
@@ -514,7 +511,9 @@ export function createRedirectAccess(
 			}
 			const result = await handleRedirectCreate(db, parsed.data);
 			if (!result.success) return throwRedirectResult(result.error);
-			return toVersionedRedirect(repo, result.data);
+			const current = await readVersionedRedirect(repo, result.data.id);
+			if (!current) throw new RedirectAccessError("NOT_FOUND", "Created redirect not found");
+			return current;
 		},
 		async update(id: string, input: RedirectUpdateInput & { _rev: string }) {
 			assertNoAutomaticRedirectMarker(input);
@@ -529,7 +528,9 @@ export function createRedirectAccess(
 			}
 			const result = await handleRedirectUpdate(db, id, parsed.data, { expectedRevision });
 			if (!result.success) return throwRedirectResult(result.error);
-			return toVersionedRedirect(repo, result.data);
+			const current = await readVersionedRedirect(repo, result.data.id);
+			if (!current) throw new RedirectAccessError("NOT_FOUND", "Updated redirect not found");
+			return current;
 		},
 		async delete(id: string, options: { _rev: string }) {
 			if (typeof options !== "object" || options === null) {

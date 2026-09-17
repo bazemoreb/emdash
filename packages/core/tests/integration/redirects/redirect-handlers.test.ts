@@ -25,6 +25,19 @@ describe("redirect handlers — loop detection", () => {
 	});
 
 	describe("handleRedirectCreate", () => {
+		it("fails closed while another redirect writer owns the database lease", async () => {
+			await db
+				.updateTable("_emdash_redirect_write_lock")
+				.set({ token: "other-writer", expires_at: Date.now() + 60_000 })
+				.where("id", "=", 1)
+				.execute();
+
+			await expect(
+				handleRedirectCreate(db, { source: "/blocked", destination: "/target" }),
+			).resolves.toMatchObject({ success: false, error: { code: "REDIRECT_BUSY" } });
+			await expect(new RedirectRepository(db).findBySource("/blocked")).resolves.toBeNull();
+		});
+
 		it("rejects a redirect that would create a direct 2-node loop", async () => {
 			await handleRedirectCreate(db, { source: "/a", destination: "/b" });
 

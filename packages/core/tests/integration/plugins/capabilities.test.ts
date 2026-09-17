@@ -8,6 +8,13 @@
 
 import Database from "better-sqlite3";
 import { Kysely, SqliteDialect, sql } from "kysely";
+import type {
+	PluginTransformQueryArgs,
+	PluginTransformResultArgs,
+	QueryResult,
+	RootOperationNode,
+	UnknownRow,
+} from "kysely";
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 
 import { runMigrations } from "../../../src/database/migrations/runner.js";
@@ -671,6 +678,26 @@ describe("Capability Enforcement Integration (v2)", () => {
 			expect(page.hasMore).toBe(true);
 			expect(page.cursor).toBeDefined();
 			await expect(access.get(first.redirect.id)).resolves.toEqual(first);
+		});
+
+		it("reads redirect fields and their revision in one database snapshot", async () => {
+			const writer = createRedirectAccess(db, true);
+			const created = await writer.create({ source: "/snapshot", destination: "/target" });
+			let queryCount = 0;
+			const countedDb = db.withPlugin({
+				transformQuery(args: PluginTransformQueryArgs): RootOperationNode {
+					queryCount++;
+					return args.node;
+				},
+				transformResult(args: PluginTransformResultArgs): Promise<QueryResult<UnknownRow>> {
+					return Promise.resolve(args.result);
+				},
+			});
+
+			await expect(createRedirectAccess(countedDb).get(created.redirect.id)).resolves.toEqual(
+				created,
+			);
+			expect(queryCount).toBe(1);
 		});
 
 		it("uses an opaque precondition for concurrent updates", async () => {
