@@ -66,6 +66,7 @@ import type {
 	TaxonomyReadOptions,
 	SchemaAccess,
 	CollectionSchemaInfo,
+	PluginContentCreateCallback,
 } from "./types.js";
 
 // =============================================================================
@@ -526,6 +527,11 @@ export function createContentAccessWithWrite(
 	db: Kysely<Database>,
 	beforeContentWrite?: () => Promise<void>,
 	accessOptions?: { site?: SiteInfo; revisions?: boolean },
+	contentCreate?: (data: {
+		collection: string;
+		input: ContentWriteInput;
+		options?: ContentCreateOptions;
+	}) => Promise<ContentItem>,
 ): ContentAccessWithWrite {
 	const readAccess = createContentAccess(db, accessOptions);
 
@@ -539,6 +545,13 @@ export function createContentAccessWithWrite(
 		): Promise<ContentItem> {
 			const locale = resolveContentCreateLocale(options?.locale);
 			await beforeContentWrite?.();
+			if (contentCreate) {
+				return contentCreate({
+					collection,
+					input: data,
+					options: { ...options, locale },
+				});
+			}
 			const { fields, seo } = splitSeoFromInput(data);
 			let contentMutated = false;
 
@@ -553,6 +566,7 @@ export function createContentAccessWithWrite(
 						type: collection,
 						data: fields,
 						locale,
+						translationOf: options?.translationOf,
 					});
 					contentMutated = true;
 
@@ -1173,6 +1187,7 @@ export function createUserAccess(db: Kysely<Database>): UserAccess {
 export interface PluginContextFactoryOptions {
 	db: Kysely<Database>;
 	beforeContentWrite?: () => Promise<void>;
+	contentCreate?: PluginContentCreateCallback;
 	/**
 	 * Resolver for the database connection, preferred over `db` when present.
 	 * Called per `createContext()` so connection-backed adapters (e.g. Postgres
@@ -1230,6 +1245,7 @@ export interface PluginContextFactoryOptions {
 export class PluginContextFactory {
 	private resolveDb: () => Kysely<Database>;
 	private beforeContentWrite?: () => Promise<void>;
+	private contentCreate?: PluginContentCreateCallback;
 	private storage?: Storage;
 	private getUploadUrl?: (
 		filename: string,
@@ -1251,6 +1267,7 @@ export class PluginContextFactory {
 		const fixedDb = options.db;
 		this.resolveDb = options.getDb ?? (() => fixedDb);
 		this.beforeContentWrite = options.beforeContentWrite;
+		this.contentCreate = options.contentCreate;
 		this.storage = options.storage;
 		this.getUploadUrl = options.getUploadUrl;
 		this.site = createSiteInfo(options.siteInfo ?? {});
@@ -1284,10 +1301,17 @@ export class PluginContextFactory {
 		// names ("read:content", "write:content") never appear here.
 		let content: ContentAccess | ContentAccessWithWrite | undefined;
 		if (capabilities.has("content:write")) {
-			content = createContentAccessWithWrite(db, this.beforeContentWrite, {
-				site: this.site,
-				revisions: capabilities.has("content:revisions:read"),
-			});
+			content = createContentAccessWithWrite(
+				db,
+				this.beforeContentWrite,
+				{
+					site: this.site,
+					revisions: capabilities.has("content:revisions:read"),
+				},
+				this.contentCreate
+					? (input) => this.contentCreate!(plugin.id, input.collection, input.input, input.options)
+					: undefined,
+			);
 		} else if (capabilities.has("content:read")) {
 			content = createContentAccess(db, {
 				site: this.site,
