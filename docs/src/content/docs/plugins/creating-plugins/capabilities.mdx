@@ -80,7 +80,7 @@ const releaseNotes = await ctx.taxonomies!.createTerm!("category", {
 await ctx.taxonomies!.addEntryTerms!("posts", postId, "category", [releaseNotes.id]);
 ```
 
-`addEntryTerms()` and `removeEntryTerms()` are idempotent set deltas. Concurrent additions preserve every assignment. EmDash verifies that the taxonomy is attached to the collection, the entry exists, and each term belongs to the named taxonomy. Creating a translated term with `translationOf` joins the source term's translation group; the source must belong to the same taxonomy, and the group can contain only one term per locale.
+`addEntryTerms()` and `removeEntryTerms()` are idempotent set deltas. Concurrent additions preserve every assignment. EmDash verifies that the taxonomy is attached to the collection, the entry exists, and each term belongs to the named taxonomy. `createTerm()` rejects `parentId` when the taxonomy is not hierarchical instead of ignoring it. Creating a translated term with `translationOf` joins the source term's translation group; the source must belong to the same taxonomy, and the group can contain only one term per locale.
 
 Taxonomy definition creation, collection attachment, replacement, term updates, and term deletion are not available through `taxonomies:write`.
 

@@ -426,6 +426,12 @@ describe("Capability Enforcement Integration (v2)", () => {
 				await expect(
 					access.createTerm("topic", { label: "Models", parentId: "term-news" }),
 				).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+				await expect(
+					access.createTerm("topic", { label: "Flat child", parentId: "term-ai" }),
+				).rejects.toMatchObject({
+					code: "VALIDATION_ERROR",
+					message: "Taxonomy 'topic' is not hierarchical and cannot have parent terms",
+				});
 			});
 
 			it("allows only one concurrent translation per term group and locale", async () => {

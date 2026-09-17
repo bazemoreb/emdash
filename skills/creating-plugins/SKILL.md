@@ -125,7 +125,7 @@ interface PluginContext {
 
 Optional properties appear only when the matching capability and host configuration are present.
 
-Taxonomy assignment writes accept term row IDs or translation-group IDs, not term slugs. `addEntryTerms()` and `removeEntryTerms()` apply idempotent deltas, so concurrent additions do not replace one another. The host validates taxonomy attachment, entry existence, term ownership, locale, translations, and hierarchy. Taxonomy-definition management, assignment replacement, term updates, and term deletion are not exposed.
+Taxonomy assignment writes accept term row IDs or translation-group IDs, not term slugs. `addEntryTerms()` and `removeEntryTerms()` apply idempotent deltas, so concurrent additions do not replace one another. The host validates taxonomy attachment, entry existence, term ownership, locale, translations, and hierarchy. `createTerm()` rejects `parentId` for a non-hierarchical taxonomy instead of ignoring it. Taxonomy-definition management, assignment replacement, term updates, and term deletion are not exposed.
 
 ## Routes and MCP tools
 

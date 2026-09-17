@@ -331,6 +331,9 @@ describe("agent guidance", () => {
 		expect(skill).toContain("createPluginRuntimeTestHost()");
 		expect(skill).toContain("Node/workerd parity opt-in");
 		expect(skill).toContain("pass a taxonomy name and term fields to `createTerm()`");
+		expect(skill).toContain(
+			"The method rejects `parentId` for a non-hierarchical taxonomy instead of ignoring it",
+		);
 		expect(skill).toContain("Pass term IDs to `addEntryTerms()` and `removeEntryTerms()`");
 		expect(skill).toContain("@<publisher-handle>/<slug>");
 		expect(skill).toContain("info <handle> <slug> --version <version> --watch");

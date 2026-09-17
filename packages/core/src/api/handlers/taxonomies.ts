@@ -200,6 +200,18 @@ async function requireTaxonomyDefWithFallback(
 	return def ? { success: true, def } : taxonomyDefNotFound(name, locale);
 }
 
+function validateHierarchicalParent(
+	def: Selectable<TaxonomyDefTable>,
+	taxonomyName: string,
+	parentId: string | null | undefined,
+): { code: "VALIDATION_ERROR"; message: string } | null {
+	if (parentId === undefined || parentId === null || def.hierarchical === 1) return null;
+	return {
+		code: "VALIDATION_ERROR",
+		message: `Taxonomy '${taxonomyName}' is not hierarchical and cannot have parent terms`,
+	};
+}
+
 /** The subset of `slugs` that still has a row in `_emdash_collections`. */
 async function findExistingCollections(
 	db: Kysely<Database>,
@@ -903,10 +915,7 @@ export async function handleTermCreate(
 	try {
 		const locale = resolveConfiguredLocale(input.locale ?? getI18nConfig()?.defaultLocale ?? "en");
 		effectiveLocale = locale;
-		// Taxonomy definitions are per-locale, but terms can exist in any locale
-		// regardless of whether the def has been translated there. Look up the
-		// def across all locales — we only care that it *exists*.
-		const lookup = await requireTaxonomyDef(db, taxonomyName);
+		const lookup = await requireTaxonomyDefWithFallback(db, taxonomyName, locale);
 		if (!lookup.success) return lookup;
 
 		const repo = new TaxonomyRepository(db);
@@ -914,6 +923,8 @@ export async function handleTermCreate(
 		// Coerce empty-string parentId to undefined (treat as "no parent").
 		const parentId =
 			input.parentId === "" || input.parentId === undefined ? undefined : input.parentId;
+		const hierarchyError = validateHierarchicalParent(lookup.def, taxonomyName, parentId);
+		if (hierarchyError) return { success: false, error: hierarchyError };
 
 		// Conflict check is scoped to locale (per-locale slugs are unique).
 		const existing =
@@ -1195,6 +1206,12 @@ export async function handleTermUpdate(
 		const newSlug = input.slug === "" || input.slug === undefined ? undefined : input.slug;
 		const newParentId =
 			input.parentId === "" || input.parentId === undefined ? undefined : input.parentId;
+		if (newParentId !== undefined && newParentId !== null) {
+			const lookup = await requireTaxonomyDefWithFallback(db, taxonomyName, term.locale);
+			if (!lookup.success) return lookup;
+			const hierarchyError = validateHierarchicalParent(lookup.def, taxonomyName, newParentId);
+			if (hierarchyError) return { success: false, error: hierarchyError };
+		}
 
 		// Check if new slug conflicts (per-locale uniqueness).
 		if (newSlug !== undefined && newSlug !== termSlug) {
