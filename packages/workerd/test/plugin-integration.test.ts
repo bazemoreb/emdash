@@ -630,6 +630,37 @@ describe("Plugin integration: sandboxed-test plugin operations", () => {
 		expect(listResult.error).toContain("Missing capability: media:read");
 	});
 
+	it("keeps media metadata, bytes, and metadata mutation independently gated", async () => {
+		const metadataOnly = createBridgeHandler({
+			pluginId: "metadata-only-media",
+			version: "1.0.0",
+			capabilities: ["media:read"],
+			allowedHosts: [],
+			storageCollections: [],
+			db,
+			emailSend: () => null,
+		});
+		const bytesResult = await call(metadataOnly, "media/readBytes", { id: "any" });
+		expect(bytesResult.error).toContain("Missing capability: media:bytes:read");
+		const updateResult = await call(metadataOnly, "media/updateMetadata", {
+			id: "any",
+			patch: { alt: "Changed" },
+		});
+		expect(updateResult.error).toContain("Missing capability: media:metadata:write");
+
+		const bytesOnly = createBridgeHandler({
+			pluginId: "bytes-only-media",
+			version: "1.0.0",
+			capabilities: ["media:bytes:read"],
+			allowedHosts: [],
+			storageCollections: [],
+			db,
+			emailSend: () => null,
+		});
+		const getResult = await call(bytesOnly, "media/get", { id: "any" });
+		expect(getResult.error).toContain("Missing capability: media:read");
+	});
+
 	it("sandboxed-test plugin cannot send email (not in capabilities)", async () => {
 		const handler = makePluginHandler();
 		const result = await call(handler, "email/send", {

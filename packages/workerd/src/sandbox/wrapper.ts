@@ -285,6 +285,18 @@ function createContext() {
 	const media = {
 		get: (id) => bridgeCall("media/get", { id }),
 		list: (opts) => bridgeCall("media/list", opts || {}),
+		readBytes: async (id, opts) => {
+			const result = await bridgeCall("media/readBytes", { id, maxBytes: opts?.maxBytes });
+			if (result?.encoding !== "base64" || typeof result.bytes !== "string") {
+				throw new Error("Invalid media byte response");
+			}
+			const binary = atob(result.bytes);
+			const bytes = new Uint8Array(binary.length);
+			for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+			const { encoding: _encoding, ...media } = result;
+			return { ...media, bytes };
+		},
+		updateMetadata: (id, patch) => bridgeCall("media/updateMetadata", { id, patch }),
 		upload: (filename, contentType, bytes) => {
 			// Convert any binary input into a Uint8Array view pointing at the
 			// SAME underlying bytes (not reinterpreted). For ArrayBufferView

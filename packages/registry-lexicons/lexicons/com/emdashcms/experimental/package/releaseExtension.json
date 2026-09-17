@@ -138,7 +138,17 @@
 				"read": {
 					"type": "ref",
 					"ref": "#mediaReadConstraints",
-					"description": "Plugin may read media metadata and fetch media bytes."
+					"description": "Plugin may read ready media metadata. Storage keys, author identity, content hashes, and file bytes are excluded."
+				},
+				"bytesRead": {
+					"type": "ref",
+					"ref": "#mediaBytesReadConstraints",
+					"description": "Plugin may read bounded bytes and content hashes for ready media."
+				},
+				"metadataWrite": {
+					"type": "ref",
+					"ref": "#mediaMetadataWriteConstraints",
+					"description": "Plugin may change alt text, captions, and focal points on ready media."
 				},
 				"write": {
 					"type": "ref",
@@ -150,6 +160,14 @@
 		"mediaReadConstraints": {
 			"type": "object",
 			"description": "Constraint object for media.read. No constraint keys are normatively defined here."
+		},
+		"mediaBytesReadConstraints": {
+			"type": "object",
+			"description": "Constraint object for media.bytesRead. No constraint keys are normatively defined here."
+		},
+		"mediaMetadataWriteConstraints": {
+			"type": "object",
+			"description": "Constraint object for media.metadataWrite. No constraint keys are normatively defined here."
 		},
 		"mediaWriteConstraints": {
 			"type": "object",

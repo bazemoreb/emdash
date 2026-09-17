@@ -31,6 +31,7 @@ import type { Storage } from "../storage/types.js";
 import { assertStorageKey } from "./conditional-storage.js";
 import { CronAccessImpl } from "./cron.js";
 import type { EmailPipeline } from "./email.js";
+import { readPluginMediaBytes, toPluginMediaItem, updatePluginMediaMetadata } from "./media.js";
 import type {
 	ResolvedPlugin,
 	PluginContext,
@@ -541,17 +542,7 @@ export function createMediaAccess(db: Kysely<Database>): MediaAccess {
 	return {
 		async get(id: string): Promise<MediaItem | null> {
 			const item = await mediaRepo.findById(id);
-			if (!item) return null;
-
-			return {
-				id: item.id,
-				filename: item.filename,
-				mimeType: item.mimeType,
-				size: item.size,
-				// Construct URL from storage key (or use a sensible default path)
-				url: `/media/${item.id}/${item.filename}`,
-				createdAt: item.createdAt,
-			};
+			return item?.status === "ready" ? toPluginMediaItem(item) : null;
 		},
 
 		async list(options?: MediaListOptions): Promise<PaginatedResult<MediaItem>> {
@@ -562,18 +553,22 @@ export function createMediaAccess(db: Kysely<Database>): MediaAccess {
 			});
 
 			return {
-				items: result.items.map((item) => ({
-					id: item.id,
-					filename: item.filename,
-					mimeType: item.mimeType,
-					size: item.size,
-					url: `/media/${item.id}/${item.filename}`,
-					createdAt: item.createdAt,
-				})),
+				items: result.items.map(toPluginMediaItem),
 				cursor: result.nextCursor,
 				hasMore: !!result.nextCursor,
 			};
 		},
+	};
+}
+
+function mediaReadDenied(): never {
+	throw new Error("Missing capability: media:read");
+}
+
+function createBlockedMediaReadAccess(): MediaAccess {
+	return {
+		get: async () => mediaReadDenied(),
+		list: async () => mediaReadDenied(),
 	};
 }
 
@@ -1165,6 +1160,17 @@ export class PluginContextFactory {
 		// either avoids silently degrading media:write to read-only — the bug
 		// where the runtime threads `storage` but not `getUploadUrl`.
 		let media: MediaAccess | MediaAccessWithWrite | undefined;
+		const hasMediaAccess =
+			capabilities.has("media:read") ||
+			capabilities.has("media:write") ||
+			capabilities.has("media:bytes:read") ||
+			capabilities.has("media:metadata:write");
+		if (hasMediaAccess) {
+			media =
+				capabilities.has("media:read") || capabilities.has("media:write")
+					? createMediaAccess(db)
+					: createBlockedMediaReadAccess();
+		}
 		if (capabilities.has("media:write")) {
 			if (this.getUploadUrl || this.storage) {
 				media = createMediaAccessWithWrite(db, this.getUploadUrl, this.storage);
@@ -1175,12 +1181,14 @@ export class PluginContextFactory {
 						"declares the media:write capability but no storage backend is configured; upload() is unavailable.",
 					);
 				}
-				if (capabilities.has("media:read")) {
-					media = createMediaAccess(db);
-				}
+				media ??= createMediaAccess(db);
 			}
-		} else if (capabilities.has("media:read")) {
-			media = createMediaAccess(db);
+		}
+		if (capabilities.has("media:bytes:read") && media) {
+			media.readBytes = (id, options) => readPluginMediaBytes(db, this.storage, id, options);
+		}
+		if (capabilities.has("media:metadata:write") && media) {
+			media.updateMetadata = (id, patch) => updatePluginMediaMetadata(db, id, patch);
 		}
 
 		// Capability-gated: http

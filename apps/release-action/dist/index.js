@@ -1127,6 +1127,8 @@ var releaseExtension_exports = /* @__PURE__ */ __exportAll({
 	emailTransportConstraintsSchema: () => emailTransportConstraintsSchema,
 	mainSchema: () => mainSchema,
 	mediaAccessSchema: () => mediaAccessSchema,
+	mediaBytesReadConstraintsSchema: () => mediaBytesReadConstraintsSchema,
+	mediaMetadataWriteConstraintsSchema: () => mediaMetadataWriteConstraintsSchema,
 	mediaReadConstraintsSchema: () => mediaReadConstraintsSchema,
 	mediaWriteConstraintsSchema: () => mediaWriteConstraintsSchema,
 	networkAccessSchema: () => networkAccessSchema,
@@ -1200,6 +1202,12 @@ const _mainSchema = /* @__PURE__ */ object$1({
 });
 const _mediaAccessSchema = /* @__PURE__ */ object$1({
 	$type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#mediaAccess")),
+	get bytesRead() {
+		return /* @__PURE__ */ optional$1(mediaBytesReadConstraintsSchema);
+	},
+	get metadataWrite() {
+		return /* @__PURE__ */ optional$1(mediaMetadataWriteConstraintsSchema);
+	},
 	get read() {
 		return /* @__PURE__ */ optional$1(mediaReadConstraintsSchema);
 	},
@@ -1207,6 +1215,8 @@ const _mediaAccessSchema = /* @__PURE__ */ object$1({
 		return /* @__PURE__ */ optional$1(mediaWriteConstraintsSchema);
 	}
 });
+const _mediaBytesReadConstraintsSchema = /* @__PURE__ */ object$1({ $type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#mediaBytesReadConstraints")) });
+const _mediaMetadataWriteConstraintsSchema = /* @__PURE__ */ object$1({ $type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#mediaMetadataWriteConstraints")) });
 const _mediaReadConstraintsSchema = /* @__PURE__ */ object$1({ $type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#mediaReadConstraints")) });
 const _mediaWriteConstraintsSchema = /* @__PURE__ */ object$1({ $type: /* @__PURE__ */ optional$1(/* @__PURE__ */ literal$1("com.emdashcms.experimental.package.releaseExtension#mediaWriteConstraints")) });
 const _networkAccessSchema = /* @__PURE__ */ object$1({
@@ -1258,6 +1268,8 @@ const emailSendConstraintsSchema = _emailSendConstraintsSchema;
 const emailTransportConstraintsSchema = _emailTransportConstraintsSchema;
 const mainSchema = _mainSchema;
 const mediaAccessSchema = _mediaAccessSchema;
+const mediaBytesReadConstraintsSchema = _mediaBytesReadConstraintsSchema;
+const mediaMetadataWriteConstraintsSchema = _mediaMetadataWriteConstraintsSchema;
 const mediaReadConstraintsSchema = _mediaReadConstraintsSchema;
 const mediaWriteConstraintsSchema = _mediaWriteConstraintsSchema;
 const networkAccessSchema = _networkAccessSchema;
@@ -7788,6 +7800,8 @@ const CURRENT_PLUGIN_CAPABILITIES = [
 	"content:write",
 	"taxonomies:read",
 	"media:read",
+	"media:bytes:read",
+	"media:metadata:write",
 	"media:write",
 	"users:read",
 	"email:send",
@@ -8005,6 +8019,8 @@ const declaredAccessSchema = object({
 	taxonomies: object({ read: accessConstraints.optional() }).optional(),
 	media: object({
 		read: accessConstraints.optional(),
+		bytesRead: accessConstraints.optional(),
+		metadataWrite: accessConstraints.optional(),
 		write: accessConstraints.optional()
 	}).optional(),
 	network: object({ request: object({ allowedHosts: array(string()).min(1).optional() }).optional() }).optional(),
@@ -8118,6 +8134,8 @@ function capabilitiesToDeclaredAccess(capabilities, allowedHosts) {
 		out.media = { read: {} };
 		if (caps.has("media:write")) out.media.write = {};
 	}
+	if (caps.has("media:bytes:read")) (out.media ??= {}).bytesRead = {};
+	if (caps.has("media:metadata:write")) (out.media ??= {}).metadataWrite = {};
 	if (caps.has("network:request:unrestricted")) out.network = { request: {} };
 	else if (caps.has("network:request")) out.network = { request: { allowedHosts: [...allowedHosts] } };
 	if (caps.has("email:send")) (out.email ??= {}).send = {};
@@ -8144,6 +8162,8 @@ function declaredAccessToCapabilities(declaredAccess) {
 	}
 	if (declaredAccess.taxonomies?.read) caps.add("taxonomies:read");
 	if (declaredAccess.media?.read) caps.add("media:read");
+	if (declaredAccess.media?.bytesRead) caps.add("media:bytes:read");
+	if (declaredAccess.media?.metadataWrite) caps.add("media:metadata:write");
 	if (declaredAccess.media?.write) {
 		caps.add("media:write");
 		caps.add("media:read");

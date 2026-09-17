@@ -484,7 +484,7 @@ interface PluginContext {
 	cron?: CronAccess;
 	content?: ContentAccess;       // when content:read or content:write declared
 	taxonomies?: TaxonomyAccess;   // when taxonomies:read declared
-	media?: MediaAccess;           // when media:read or media:write declared
+	media?: MediaAccess;           // when any media capability is declared
 	http?: HttpAccess;             // when network:request declared
 	users?: UserAccess;            // when users:read declared
 	email?: EmailAccess;           // when email:send declared and provider configured

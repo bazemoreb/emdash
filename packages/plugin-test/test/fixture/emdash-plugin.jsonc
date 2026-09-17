@@ -8,6 +8,8 @@
 		"content:read",
 		"content:write",
 		"media:read",
+		"media:bytes:read",
+		"media:metadata:write",
 		"media:write",
 		"users:read",
 		"email:send",

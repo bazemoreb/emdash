@@ -74,10 +74,12 @@ describe("VersionSchema", () => {
 });
 
 describe("CapabilitySchema", () => {
-	it("accepts a current capability", () => {
+	it("accepts current capabilities", () => {
 		expect(CapabilitySchema.parse("content:read")).toBe("content:read");
 		expect(CapabilitySchema.parse("network:request")).toBe("network:request");
 		expect(CapabilitySchema.parse("email:send")).toBe("email:send");
+		expect(CapabilitySchema.parse("media:bytes:read")).toBe("media:bytes:read");
+		expect(CapabilitySchema.parse("media:metadata:write")).toBe("media:metadata:write");
 	});
 
 	it("rejects a deprecated capability with a hint at the replacement", () => {

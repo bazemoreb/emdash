@@ -388,6 +388,8 @@ describe("CAPABILITY_LABELS", () => {
 			"content:write",
 			"taxonomies:read",
 			"media:read",
+			"media:bytes:read",
+			"media:metadata:write",
 			"media:write",
 			"users:read",
 			"network:request",

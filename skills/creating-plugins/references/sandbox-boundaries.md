@@ -38,8 +38,9 @@ The following surfaces do not exist in the current sandbox contract. Do not inve
 ### Comments and media
 
 - Comment hooks receive the comment involved in their event. There is no comment list/get API and no method to change a stored comment's status from plugin code.
-- `ctx.media.get()` and `list()` return metadata and a URL. They do not download media bytes or expose an original-byte read API.
-- `ctx.media.upload()` and `delete()` are the only sandbox media writes. There is no media metadata update API.
+- `ctx.media.get()` and `list()` return ready-media metadata and an authenticated ID-based asset URL without storage keys, author identity, content hashes, or bytes. Logged-out asset requests stop in authentication middleware before the route queries media.
+- `media:bytes:read` grants buffered byte reads from ready media. Reads default to 10 MiB, cannot request more than 16 MiB, and enforce the limit while consuming the storage stream. Content hashes are returned only with this authority.
+- `media:metadata:write` changes only alt text, caption, and a complete focal-point pair. Upload, replacement, movement, and deletion remain under other authority.
 
 ### Routes, public access, and admin UI
 

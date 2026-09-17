@@ -14,18 +14,24 @@
  * must produce same outputs, same return shapes, same error messages.
  */
 
+import { Buffer } from "node:buffer";
+
 import {
 	ContentRepository,
 	CronAccessImpl,
 	createContentAccess,
 	createHttpAccess,
+	createMediaAccess,
 	createSandboxRouteErrorEnvelope,
 	createUnrestrictedHttpAccess,
 	normalizeCapabilities,
 	OptionsRepository,
+	parsePluginMediaMetadataPatch,
 	PluginStorageRepository,
+	readPluginMediaBytes,
 	StorageSerializationError,
 	resolveContentCreateLocale,
+	updatePluginMediaMetadata,
 } from "emdash";
 import type {
 	ContentFieldFilters,
@@ -97,9 +103,14 @@ const SYSTEM_COLUMNS = new Set([
 	"translation_group",
 ]);
 
-/** Minimal storage interface for media uploads and deletes */
+/** Minimal storage interface for sandboxed media operations. */
 export interface BridgeStorage {
 	upload(options: { key: string; body: Uint8Array; contentType: string }): Promise<unknown>;
+	download(key: string): Promise<{
+		body: ReadableStream<Uint8Array>;
+		contentType: string;
+		size: number;
+	}>;
 	delete(key: string): Promise<unknown>;
 }
 
@@ -315,6 +326,31 @@ async function dispatch(
 		case "media/list":
 			requireCapability(opts, "media:read");
 			return mediaList(db, body);
+		case "media/readBytes": {
+			requireCapability(opts, "media:bytes:read");
+			const maxBytes = body.maxBytes;
+			if (maxBytes !== undefined && typeof maxBytes !== "number") {
+				throw new TypeError("media/readBytes: maxBytes must be a number");
+			}
+			const result = await readPluginMediaBytes(
+				db,
+				opts.storage ?? undefined,
+				requireString(body, "id"),
+				{ maxBytes },
+			);
+			return {
+				...result,
+				bytes: Buffer.from(result.bytes).toString("base64"),
+				encoding: "base64",
+			};
+		}
+		case "media/updateMetadata":
+			requireCapability(opts, "media:metadata:write");
+			return updatePluginMediaMetadata(
+				db,
+				requireString(body, "id"),
+				parsePluginMediaMetadataPatch(body.patch),
+			);
 		case "media/upload":
 			requireCapability(opts, "media:write");
 			return mediaUpload(
@@ -1219,82 +1255,17 @@ async function taxonomyEntryTerms(
 
 // ── Media Operations ─────────────────────────────────────────────────────
 
-function rowToMediaItem(row: {
-	id: string;
-	filename: string;
-	mime_type: string;
-	size: number | null;
-	storage_key: string;
-	created_at: string;
-}) {
-	return {
-		id: row.id,
-		filename: row.filename,
-		mimeType: row.mime_type,
-		size: row.size,
-		url: `/_emdash/api/media/file/${row.storage_key}`,
-		createdAt: row.created_at,
-	};
+async function mediaGet(db: Kysely<Database>, id: string) {
+	return createMediaAccess(db).get(id);
 }
 
-async function mediaGet(
-	db: Kysely<Database>,
-	id: string,
-): Promise<{
-	id: string;
-	filename: string;
-	mimeType: string;
-	size: number | null;
-	url: string;
-	createdAt: string;
-} | null> {
-	const row = await db.selectFrom("media").where("id", "=", id).selectAll().executeTakeFirst();
-	if (!row) return null;
-	return rowToMediaItem(row);
-}
-
-async function mediaList(
-	db: Kysely<Database>,
-	opts: Record<string, unknown>,
-): Promise<{
-	items: Array<{
-		id: string;
-		filename: string;
-		mimeType: string;
-		size: number | null;
-		url: string;
-		createdAt: string;
-	}>;
-	cursor?: string;
-	hasMore: boolean;
-}> {
+async function mediaList(db: Kysely<Database>, opts: Record<string, unknown>) {
 	const limit = Math.max(1, Math.min(Number(opts.limit) || 50, 100));
-
-	// Only return ready items (matching Cloudflare bridge)
-	let query = db
-		.selectFrom("media")
-		.where("status", "=", "ready")
-		.selectAll()
-		.orderBy("id", "desc");
-
-	if (typeof opts.mimeType === "string") {
-		query = query.where("mime_type", "like", `${opts.mimeType}%`);
-	}
-
-	if (typeof opts.cursor === "string") {
-		query = query.where("id", "<", opts.cursor);
-	}
-
-	const rows = await query.limit(limit + 1).execute();
-	const pageRows = rows.slice(0, limit);
-	const items = pageRows.map((row) => rowToMediaItem(row));
-	const hasMore = rows.length > limit;
-
-	return {
-		items,
-		cursor: hasMore && items.length > 0 ? items.at(-1)!.id : undefined,
-		hasMore,
-	};
+	return createMediaAccess(db).list({
+		limit,
+		cursor: optionalString(opts, "cursor"),
+		mimeType: optionalString(opts, "mimeType"),
+	});
 }
 
 const ALLOWED_MIME_PREFIXES = ["image/", "video/", "audio/", "application/pdf"];

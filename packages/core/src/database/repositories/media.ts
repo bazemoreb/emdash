@@ -99,8 +99,8 @@ export interface FindManyMediaOptions {
 }
 
 export interface UpdateMediaInput extends FocalPointUpdate {
-	alt?: string;
-	caption?: string;
+	alt?: string | null;
+	caption?: string | null;
 	width?: number;
 	height?: number;
 	folderId?: string | null;
@@ -511,6 +511,32 @@ export class MediaRepository {
 		}
 
 		return this.findById(id);
+	}
+
+	async updateReadyMetadata(
+		id: string,
+		input: Pick<UpdateMediaInput, "alt" | "caption" | "focalX" | "focalY">,
+	): Promise<MediaItem | null> {
+		const updates: Partial<MediaRow> = {};
+		if (input.alt !== undefined) updates.alt = input.alt;
+		if (input.caption !== undefined) updates.caption = input.caption;
+		if (input.focalX !== undefined && input.focalY !== undefined) {
+			updates.focal_x = input.focalX;
+			updates.focal_y = input.focalY;
+		}
+
+		if (Object.keys(updates).length === 0) {
+			throw new TypeError("Media metadata update requires at least one field");
+		}
+
+		const row = await this.db
+			.updateTable("media")
+			.set(updates)
+			.where("id", "=", id)
+			.where("status", "=", "ready")
+			.returningAll()
+			.executeTakeFirst();
+		return row ? this.rowToItem(row) : null;
 	}
 
 	async replaceReadyFile(

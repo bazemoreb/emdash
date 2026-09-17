@@ -464,6 +464,31 @@ export interface MediaItem {
 	size: number | null;
 	url: string;
 	createdAt: string;
+	width?: number | null;
+	height?: number | null;
+	alt?: string | null;
+	caption?: string | null;
+	focalX?: number | null;
+	focalY?: number | null;
+	blurhash?: string | null;
+	dominantColor?: string | null;
+	folderId?: string | null;
+	status?: "ready";
+}
+
+export interface MediaBytes {
+	bytes: Uint8Array;
+	filename: string;
+	mimeType: string;
+	size: number;
+	contentHash?: string;
+}
+
+export interface MediaMetadataPatch {
+	alt?: string | null;
+	caption?: string | null;
+	focalX?: number | null;
+	focalY?: number | null;
 }
 
 /**
@@ -482,6 +507,10 @@ export interface MediaAccess {
 	// Read operations (requires read:media)
 	get(id: string): Promise<MediaItem | null>;
 	list(options?: MediaListOptions): Promise<PaginatedResult<MediaItem>>;
+	/** Read ready media bytes, bounded by the caller's limit and the host maximum. */
+	readBytes?(id: string, options?: { maxBytes?: number }): Promise<MediaBytes>;
+	/** Change only alt text, caption, or the complete focal-point pair. */
+	updateMetadata?(id: string, patch: MediaMetadataPatch): Promise<MediaItem>;
 
 	// Write operations (requires write:media) - optional on interface
 	getUploadUrl?(

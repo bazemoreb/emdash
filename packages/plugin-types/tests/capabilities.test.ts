@@ -113,6 +113,16 @@ describe("declaredAccess facet mapping", () => {
 		});
 	});
 
+	it("keeps media metadata, bytes, and metadata mutation as independent authority", () => {
+		expect(capabilitiesToDeclaredAccess(["media:bytes:read", "media:metadata:write"], [])).toEqual({
+			media: { bytesRead: {}, metadataWrite: {} },
+		});
+		expect(declaredAccessToCapabilities({ media: { bytesRead: {}, metadataWrite: {} } })).toEqual({
+			capabilities: ["media:bytes:read", "media:metadata:write"],
+			allowedHosts: [],
+		});
+	});
+
 	it("distinguishes host-restricted from unrestricted network", () => {
 		expect(capabilitiesToDeclaredAccess(["network:request"], ["api.example.com"])).toEqual({
 			network: { request: { allowedHosts: ["api.example.com"] } },
@@ -159,7 +169,20 @@ describe("declaredAccess <-> capabilities round-trip (total over the vocabulary)
 	// the guard that the two representations are isomorphic, so the consent list
 	// always equals the capability set the runtime enforces.
 	const contentChoices = [[], ["content:read"], ["content:read", "content:write"]];
-	const mediaChoices = [[], ["media:read"], ["media:read", "media:write"]];
+	const mediaChoices = [
+		[],
+		["media:read"],
+		["media:read", "media:write"],
+		["media:bytes:read"],
+		["media:read", "media:bytes:read"],
+		["media:read", "media:write", "media:bytes:read"],
+		["media:metadata:write"],
+		["media:read", "media:metadata:write"],
+		["media:read", "media:write", "media:metadata:write"],
+		["media:bytes:read", "media:metadata:write"],
+		["media:read", "media:bytes:read", "media:metadata:write"],
+		["media:read", "media:write", "media:bytes:read", "media:metadata:write"],
+	];
 	const networkChoices: { caps: string[]; hosts: string[] }[] = [
 		{ caps: [], hosts: [] },
 		{ caps: ["network:request", "network:request:unrestricted"], hosts: [] },
@@ -204,7 +227,7 @@ describe("declaredAccess <-> capabilities round-trip (total over the vocabulary)
 			expect(new Set(back.allowedHosts)).toEqual(new Set(input.allowedHosts));
 			count++;
 		}
-		// 3 content x 3 media x 5 network x 2^6 singleton subsets.
-		expect(count).toBe(2880);
+		// 3 content x 12 media x 5 network x 2^6 singleton subsets.
+		expect(count).toBe(11_520);
 	});
 });

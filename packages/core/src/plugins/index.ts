@@ -41,6 +41,14 @@ export {
 } from "./context.js";
 export type { PluginContextFactoryOptions } from "./context.js";
 export { CronAccessImpl } from "./cron.js";
+export {
+	DEFAULT_PLUGIN_MEDIA_READ_BYTES,
+	MAX_PLUGIN_MEDIA_READ_BYTES,
+	parsePluginMediaMetadataPatch,
+	readPluginMediaBytes,
+	toPluginMediaItem,
+	updatePluginMediaMetadata,
+} from "./media.js";
 
 // Hooks
 export { HookPipeline, createHookPipeline } from "./hooks.js";
@@ -132,6 +140,8 @@ export type {
 	ContentAccessWithWrite,
 	MediaAccess,
 	MediaAccessWithWrite,
+	MediaBytes,
+	MediaMetadataPatch,
 	HttpAccess,
 	LogAccess,
 	SiteInfo,

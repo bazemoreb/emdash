@@ -283,6 +283,13 @@ export {
 	createUnrestrictedHttpAccess,
 	createContentAccess,
 	createContentAccessWithWrite,
+	createMediaAccess,
+	DEFAULT_PLUGIN_MEDIA_READ_BYTES,
+	MAX_PLUGIN_MEDIA_READ_BYTES,
+	parsePluginMediaMetadataPatch,
+	readPluginMediaBytes,
+	toPluginMediaItem,
+	updatePluginMediaMetadata,
 	CronAccessImpl,
 } from "./plugins/index.js";
 export type {
@@ -357,6 +364,8 @@ export type {
 	SandboxEmailMessage,
 	SandboxEmailSendCallback,
 	PluginManifest,
+	MediaBytes,
+	MediaMetadataPatch,
 	ValidatedPluginManifest,
 	SerializedRequest,
 	SandboxRouteErrorCode,

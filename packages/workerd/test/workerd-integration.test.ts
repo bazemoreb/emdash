@@ -81,6 +81,28 @@ async function setupTables(db: Kysely<any>) {
 		.addColumn("enabled", "integer", (col) => col.notNull())
 		.addUniqueConstraint("uq_cron_plugin_task", ["plugin_id", "task_name"])
 		.execute();
+
+	await db.schema
+		.createTable("media")
+		.addColumn("id", "text", (col) => col.primaryKey())
+		.addColumn("filename", "text", (col) => col.notNull())
+		.addColumn("mime_type", "text", (col) => col.notNull())
+		.addColumn("size", "integer")
+		.addColumn("width", "integer")
+		.addColumn("height", "integer")
+		.addColumn("focal_x", "real")
+		.addColumn("focal_y", "real")
+		.addColumn("alt", "text")
+		.addColumn("caption", "text")
+		.addColumn("storage_key", "text", (col) => col.notNull())
+		.addColumn("status", "text", (col) => col.notNull())
+		.addColumn("content_hash", "text")
+		.addColumn("blurhash", "text")
+		.addColumn("dominant_color", "text")
+		.addColumn("created_at", "text", (col) => col.notNull())
+		.addColumn("author_id", "text")
+		.addColumn("folder_id", "text")
+		.execute();
 }
 
 /** Minimal plugin code that echoes back hook/route calls.
@@ -219,6 +241,25 @@ export default {
 };
 `;
 
+const MEDIA_PLUGIN = `
+export default {
+	routes: {
+		"get": {
+			handler: async (route, ctx) => ctx.media.get(route.input.id)
+		},
+		"read": {
+			handler: async (route, ctx) => {
+				const result = await ctx.media.readBytes(route.input.id, { maxBytes: route.input.maxBytes });
+				return { ...result, bytes: Array.from(result.bytes) };
+			}
+		},
+		"update": {
+			handler: async (route, ctx) => ctx.media.updateMetadata(route.input.id, route.input.patch)
+		}
+	}
+};
+`;
+
 describe.skipIf(!workerdAvailable)("WorkerdSandboxRunner integration", () => {
 	let db: Kysely<any>;
 	let sqlite: Database.Database;
@@ -263,6 +304,102 @@ describe.skipIf(!workerdAvailable)("WorkerdSandboxRunner integration", () => {
 
 		expect(result).toBeDefined();
 		expect(result.input).toEqual({ hello: "world" });
+	}, 30_000);
+
+	it("preserves bounded media bytes and metadata through a real workerd process", async () => {
+		const stored = new Map([["private/original.bin", new Uint8Array([0, 255, 17, 42])]]);
+		runner = new WorkerdSandboxRunner({
+			db,
+			mediaStorage: {
+				async upload({ key, body }) {
+					stored.set(key, new Uint8Array(body));
+				},
+				async download(key) {
+					const bytes = stored.get(key);
+					if (!bytes) throw new Error("Missing test object");
+					return {
+						body: new Blob([bytes.slice().buffer]).stream(),
+						contentType: "application/octet-stream",
+						size: 1,
+					};
+				},
+				async delete(key) {
+					stored.delete(key);
+				},
+			},
+		});
+		await db
+			.insertInto("media" as any)
+			.values({
+				id: "media-1",
+				filename: "original.bin",
+				mime_type: "application/octet-stream",
+				size: 1,
+				storage_key: "private/original.bin",
+				status: "ready",
+				content_hash: "sha1:original",
+				created_at: "2030-01-02T03:04:05.000Z",
+				author_id: "private-author",
+			})
+			.execute();
+		const plugin = await runner.load(
+			{
+				id: "test-media",
+				version: "1.0.0",
+				capabilities: ["media:read", "media:bytes:read", "media:metadata:write"],
+				allowedHosts: [],
+				storage: {},
+			},
+			MEDIA_PLUGIN,
+		);
+
+		await expect(
+			plugin.invokeRoute(
+				"read",
+				{ id: "media-1", maxBytes: 3 },
+				{ method: "POST", url: "/api/media/read", headers: {} },
+			),
+		).rejects.toThrow("Media exceeds the requested 3-byte limit");
+		await expect(
+			plugin.invokeRoute(
+				"read",
+				{ id: "media-1", maxBytes: 4 },
+				{ method: "POST", url: "/api/media/read", headers: {} },
+			),
+		).resolves.toEqual({
+			bytes: [0, 255, 17, 42],
+			filename: "original.bin",
+			mimeType: "application/octet-stream",
+			size: 4,
+			contentHash: "sha1:original",
+		});
+
+		const metadata = await plugin.invokeRoute(
+			"get",
+			{ id: "media-1" },
+			{ method: "POST", url: "/api/media/get", headers: {} },
+		);
+		expect(metadata).not.toHaveProperty("storageKey");
+		expect(metadata).not.toHaveProperty("authorId");
+		expect(metadata).not.toHaveProperty("contentHash");
+		await expect(
+			plugin.invokeRoute(
+				"update",
+				{ id: "media-1", patch: { alt: "Binary fixture" } },
+				{ method: "POST", url: "/api/media/update", headers: {} },
+			),
+		).resolves.toMatchObject({ id: "media-1", alt: "Binary fixture" });
+		await expect(
+			db
+				.selectFrom("media" as any)
+				.selectAll()
+				.where("id" as any, "=", "media-1")
+				.executeTakeFirst(),
+		).resolves.toMatchObject({
+			alt: "Binary fixture",
+			storage_key: "private/original.bin",
+			content_hash: "sha1:original",
+		});
 	}, 30_000);
 
 	it("runs an equivalent runtime content and cold-restart journey through workerd", async () => {

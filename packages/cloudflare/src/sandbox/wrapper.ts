@@ -168,6 +168,11 @@ function createContext(env) {
 	const media = {
 		get: (id) => bridge.mediaGet(id),
 		list: (opts) => bridge.mediaList(opts),
+		readBytes: async (id, opts) => {
+			const result = await bridge.mediaReadBytes(id, opts?.maxBytes);
+			return { ...result, bytes: new Uint8Array(result.bytes) };
+		},
+		updateMetadata: (id, patch) => bridge.mediaUpdateMetadata(id, patch),
 		upload: (filename, contentType, bytes) => bridge.mediaUpload(filename, contentType, bytes),
 		getUploadUrl: () => { throw new Error("getUploadUrl is not available in sandbox mode. Use media.upload(filename, contentType, bytes) instead."); },
 		delete: (id) => bridge.mediaDelete(id)

@@ -16,6 +16,7 @@ import { Kysely } from "kysely";
 
 export { createPluginRuntimeTestHost } from "./runtime-host.js";
 export type {
+	PluginRuntimeMediaFixture,
 	PluginRuntimeRouteRequest,
 	PluginRuntimeTestHost,
 	PluginRuntimeTestHostOptions,

@@ -230,6 +230,68 @@ describe("runtime plugin test host", () => {
 		);
 	});
 
+	it("reads binary fixtures and updates metadata through the production Worker Loader bridge", async () => {
+		runtimeHost = await createPluginRuntimeTestHost();
+		const bytes = new Uint8Array([0, 255, 17, 42]);
+		const fixture = await runtimeHost.fixtures.media({
+			filename: "private-scan.bin",
+			mimeType: "application/octet-stream",
+			bytes,
+			reportedSize: 1,
+			alt: "Original alt",
+			contentHash: "sha1:private-scan",
+			authorId: "private-author",
+		});
+
+		await expect(
+			runtimeHost.transport.invokeRoute("media-read-bytes", {
+				id: fixture.id,
+				maxBytes: 3,
+			}),
+		).rejects.toThrow("Media exceeds the requested 3-byte limit");
+		await expect(
+			runtimeHost.transport.invokeRoute("media-read-bytes", {
+				id: fixture.id,
+				maxBytes: 4,
+			}),
+		).resolves.toEqual({
+			bytes: [0, 255, 17, 42],
+			filename: "private-scan.bin",
+			mimeType: "application/octet-stream",
+			size: 4,
+			contentHash: "sha1:private-scan",
+		});
+		await expect(runtimeHost.inspect.mediaBytes(fixture.id)).resolves.toEqual(bytes);
+
+		const metadata = await runtimeHost.transport.invokeRoute("media-get", { id: fixture.id });
+		expect(metadata).not.toHaveProperty("storageKey");
+		expect(metadata).not.toHaveProperty("authorId");
+		expect(metadata).not.toHaveProperty("contentHash");
+		await expect(
+			runtimeHost.transport.invokeRoute("media-update-alt", {
+				id: fixture.id,
+				alt: "Scanned document",
+			}),
+		).resolves.toMatchObject({ id: fixture.id, alt: "Scanned document" });
+		await expect(runtimeHost.inspect.media(fixture.id)).resolves.toMatchObject({
+			success: true,
+			data: { item: { alt: "Scanned document", contentHash: "sha1:private-scan" } },
+		});
+
+		const pending = await runtimeHost.fixtures.media({
+			filename: "pending.bin",
+			mimeType: "application/octet-stream",
+			bytes,
+			status: "pending",
+		});
+		await expect(
+			runtimeHost.transport.invokeRoute("media-get", { id: pending.id }),
+		).resolves.toBeNull();
+		await expect(
+			runtimeHost.transport.invokeRoute("media-read-bytes", { id: pending.id }),
+		).rejects.toThrow("Media item is not ready or does not exist");
+	});
+
 	it("uses one controlled clock for scheduled content and one cron batch", async () => {
 		runtimeHost = await createPluginRuntimeTestHost();
 		const admin = await runtimeHost.fixtures.user({

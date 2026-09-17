@@ -429,6 +429,7 @@ Read \`emdash-plugin.jsonc\` and \`src/plugin.ts\` before editing. The manifest 
 - Assign the runtime definition to a \`SandboxedPlugin\`-typed constant and export it as default from \`src/plugin.ts\`.
 - Use Web APIs. Do not import Node.js built-ins into plugin runtime code.
 - Declare every runtime API in \`capabilities\` and every network destination in \`allowedHosts\`.
+- Keep media authority narrow: \`media:read\` exposes safe ready-media metadata and an authenticated ID-based asset URL, \`media:bytes:read\` exposes bounded bytes and content hashes through \`ctx.media.readBytes()\`, and \`media:metadata:write\` changes only alt text, captions, and focal points through \`ctx.media.updateMetadata()\`. These declarations do not imply one another. Byte reads default to 10 MiB, cannot request more than 16 MiB, and are checked while the host consumes the storage stream.
 - Use \`ctx.storage\` for queryable records and \`ctx.kv\` for key-value state.
 - Use Block Kit for sandboxed admin UI. Do not ship browser React components.
 - Treat public routes as internet-facing and validate their inputs.

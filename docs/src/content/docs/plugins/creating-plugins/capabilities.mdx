@@ -33,6 +33,8 @@ Declare only what the plugin actually needs. The registry shows these capabiliti
 | `content:write`                     | `ctx.content.create()`, `ctx.content.update()`, `ctx.content.delete()` (implies `content:read`) |
 | `taxonomies:read`                   | `ctx.taxonomies.getAll()`, `ctx.taxonomies.getTerms()`, `ctx.taxonomies.getEntryTerms()` |
 | `media:read`                        | `ctx.media.get()`, `ctx.media.list()`                                             |
+| `media:bytes:read`                  | `ctx.media.readBytes()` for ready media, with a bounded buffered response         |
+| `media:metadata:write`              | `ctx.media.updateMetadata()` for alt text, captions, and focal points             |
 | `media:write`                       | `ctx.media.getUploadUrl()`, `ctx.media.upload()`, `ctx.media.delete()` (implies `media:read`) |
 | `network:request`                   | `ctx.http.fetch()` — restricted to `allowedHosts`                                 |
 | `network:request:unrestricted`      | `ctx.http.fetch()` with no host restriction (for user-configured URLs only)       |
@@ -45,6 +47,7 @@ Declare only what the plugin actually needs. The registry shows these capabiliti
 The following rules affect which capabilities a plugin needs:
 
 - **Implications.** `content:write` automatically implies `content:read`; `media:write` implies `media:read`; `network:request:unrestricted` implies `network:request`. You don't need to list both.
+- **Media authorities are separate.** `media:read`, `media:bytes:read`, and `media:metadata:write` do not imply one another. Declare each operation the plugin uses. The existing `media:write` capability continues to imply `media:read` for compatibility.
 - **Taxonomies are a separate, read-only surface.** `taxonomies:read` grants access to taxonomy definitions, their terms, and the terms assigned to an entry via `ctx.taxonomies`. It is independent of `content:read` — declare both if the plugin reads content *and* its classification. There is no taxonomy *write* access from plugins.
 - **`network:request:unrestricted` exists for user-configured URLs.** A webhook plugin where the operator types in the destination URL needs to reach hosts that aren't in the manifest. Plugins that always call known APIs should use `network:request` + `allowedHosts`.
 - **`email:send` is gated by configuration, not just the capability.** A plugin can declare `email:send`, but `ctx.email` will only be populated if some other plugin has registered an `email:deliver` transport.
@@ -62,6 +65,35 @@ const post = await ctx.content.create(
 ```
 
 Locale matching is case-insensitive and stores the casing from the site's locale configuration, so `zh-tw` becomes `zh-TW` when that is the configured form. A malformed explicit locale always throws; when i18n is configured, an explicit locale outside the configured locale list also throws. When the option is omitted, EmDash uses the site's configured default locale; sites without i18n configuration retain the `en` default.
+
+### Reading media metadata and bytes
+
+`media:read` returns ready media records with dimensions, alt text, caption, focal point, blurhash, dominant color, folder ID, and an authenticated ID-based asset URL. An administrator's session or an API token with `media:read` can follow the URL; logged-out requests are rejected before the route reads the media record. The metadata does not return the storage key, author identity, content hash, or file bytes. The content hash is available only from `readBytes()` because it can reveal whether the site stores a known file.
+
+Inside a hook or route handler, the following call reads at most 2 MiB from one ready media item:
+
+```ts title="src/plugin.ts"
+const file = await ctx.media!.readBytes!(mediaId, {
+	maxBytes: 2 * 1024 * 1024,
+});
+
+const digest = file.contentHash;
+const bytes = file.bytes;
+```
+
+`readBytes()` buffers the result. It defaults to 10 MiB when `maxBytes` is omitted and rejects values above the 16 MiB host maximum. EmDash counts bytes while consuming the storage stream, so an incorrect stored size cannot bypass the requested limit. Missing, pending, and failed media are rejected without revealing their storage location.
+
+The following update changes the accessibility text and focal point without granting upload, replacement, or deletion authority:
+
+```ts title="src/plugin.ts"
+const updated = await ctx.media!.updateMetadata!(mediaId, {
+	alt: "Two people reviewing a printed proof",
+	focalX: 0.42,
+	focalY: 0.36,
+});
+```
+
+Provide both focal coordinates as numbers from `0` to `1`, or set both to `null`. Concurrent patches to different metadata fields do not replace one another.
 
 ## Network host allowlists
 

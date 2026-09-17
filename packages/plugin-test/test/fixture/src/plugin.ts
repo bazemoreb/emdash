@@ -76,6 +76,52 @@ const plugin: SandboxedPlugin = {
 				return { count: result.items.length };
 			},
 		},
+		"media-get": {
+			handler: async (route, ctx) => {
+				if (
+					typeof route.input !== "object" ||
+					route.input === null ||
+					!("id" in route.input) ||
+					typeof route.input.id !== "string"
+				) {
+					throw new Error("Expected a media ID");
+				}
+				return ctx.media!.get(route.input.id);
+			},
+		},
+		"media-read-bytes": {
+			handler: async (route, ctx) => {
+				if (
+					typeof route.input !== "object" ||
+					route.input === null ||
+					!("id" in route.input) ||
+					typeof route.input.id !== "string"
+				) {
+					throw new Error("Expected a media ID");
+				}
+				const maxBytes =
+					"maxBytes" in route.input && typeof route.input.maxBytes === "number"
+						? route.input.maxBytes
+						: undefined;
+				const result = await ctx.media!.readBytes!(route.input.id, { maxBytes });
+				return { ...result, bytes: [...result.bytes] };
+			},
+		},
+		"media-update-alt": {
+			handler: async (route, ctx) => {
+				if (
+					typeof route.input !== "object" ||
+					route.input === null ||
+					!("id" in route.input) ||
+					typeof route.input.id !== "string" ||
+					!("alt" in route.input) ||
+					(route.input.alt !== null && typeof route.input.alt !== "string")
+				) {
+					throw new Error("Expected a media ID and alt text");
+				}
+				return ctx.media!.updateMetadata!(route.input.id, { alt: route.input.alt });
+			},
+		},
 		"settings-value": {
 			handler: async (_route, ctx) => ({
 				enabled: await ctx.kv.get("settings:enabled"),

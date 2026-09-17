@@ -87,6 +87,8 @@ Use only canonical capability names:
 | `content:write`                  | `ctx.content.create()`, `update()`, `delete()`; implies read            |
 | `taxonomies:read`                | `ctx.taxonomies.getAll()`, `getTerms()`, `getEntryTerms()`              |
 | `media:read`                     | `ctx.media.get()`, `ctx.media.list()`                                   |
+| `media:bytes:read`               | `ctx.media.readBytes()` for bounded bytes from ready media              |
+| `media:metadata:write`           | `ctx.media.updateMetadata()` for alt, caption, and focal point          |
 | `media:write`                    | `ctx.media.upload()`, `ctx.media.delete()`; implies read                |
 | `network:request`                | `ctx.http.fetch()` restricted to `allowedHosts`                         |
 | `network:request:unrestricted`   | `ctx.http.fetch()` without a manifest host list                         |
@@ -148,6 +150,12 @@ const uploaded = await ctx.media!.upload("report.pdf", "application/pdf", bytes)
 ```
 
 Both sandbox runners write the bytes through the configured media storage adapter and create a ready media record. `getUploadUrl()` is not available inside either sandbox runner. Accepted content types are images, video, audio, and PDF.
+
+Use `media:read` for ready-media metadata. It includes dimensions, alt text, caption, focal point, blurhash, dominant color, folder ID, and an authenticated ID-based asset URL. An administrator session or API token with `media:read` can follow the URL; logged-out requests stop before the route reads the media record. Metadata excludes storage keys, author identity, content hashes, and bytes. Content hashes are visible only with `media:bytes:read` because they can reveal whether the site stores a known file.
+
+`ctx.media!.readBytes!(id, { maxBytes })` buffers bytes from the configured storage adapter. The default is 10 MiB and the host maximum is 16 MiB. The host enforces the requested limit while reading the stream, even when stored size metadata is wrong.
+
+With `media:metadata:write`, `ctx.media!.updateMetadata!()` changes only alt text, caption, and a complete focal-point pair. It cannot upload, replace, move, or delete a file. `media:read`, `media:bytes:read`, and `media:metadata:write` are independent declarations; `media:write` retains its existing implication of `media:read`.
 
 ## Hooks
 

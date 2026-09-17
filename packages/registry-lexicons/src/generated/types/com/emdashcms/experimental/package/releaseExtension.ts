@@ -155,7 +155,19 @@ const _mediaAccessSchema = /*#__PURE__*/ v.object({
 		),
 	),
 	/**
-	 * Plugin may read media metadata and fetch media bytes.
+	 * Plugin may read bounded bytes and content hashes for ready media.
+	 */
+	get bytesRead() {
+		return /*#__PURE__*/ v.optional(mediaBytesReadConstraintsSchema);
+	},
+	/**
+	 * Plugin may change alt text, captions, and focal points on ready media.
+	 */
+	get metadataWrite() {
+		return /*#__PURE__*/ v.optional(mediaMetadataWriteConstraintsSchema);
+	},
+	/**
+	 * Plugin may read ready media metadata. Storage keys, author identity, content hashes, and file bytes are excluded.
 	 */
 	get read() {
 		return /*#__PURE__*/ v.optional(mediaReadConstraintsSchema);
@@ -166,6 +178,20 @@ const _mediaAccessSchema = /*#__PURE__*/ v.object({
 	get write() {
 		return /*#__PURE__*/ v.optional(mediaWriteConstraintsSchema);
 	},
+});
+const _mediaBytesReadConstraintsSchema = /*#__PURE__*/ v.object({
+	$type: /*#__PURE__*/ v.optional(
+		/*#__PURE__*/ v.literal(
+			"com.emdashcms.experimental.package.releaseExtension#mediaBytesReadConstraints",
+		),
+	),
+});
+const _mediaMetadataWriteConstraintsSchema = /*#__PURE__*/ v.object({
+	$type: /*#__PURE__*/ v.optional(
+		/*#__PURE__*/ v.literal(
+			"com.emdashcms.experimental.package.releaseExtension#mediaMetadataWriteConstraints",
+		),
+	),
 });
 const _mediaReadConstraintsSchema = /*#__PURE__*/ v.object({
 	$type: /*#__PURE__*/ v.optional(
@@ -327,6 +353,10 @@ type emailTransportConstraints$schematype =
 	typeof _emailTransportConstraintsSchema;
 type main$schematype = typeof _mainSchema;
 type mediaAccess$schematype = typeof _mediaAccessSchema;
+type mediaBytesReadConstraints$schematype =
+	typeof _mediaBytesReadConstraintsSchema;
+type mediaMetadataWriteConstraints$schematype =
+	typeof _mediaMetadataWriteConstraintsSchema;
 type mediaReadConstraints$schematype = typeof _mediaReadConstraintsSchema;
 type mediaWriteConstraints$schematype = typeof _mediaWriteConstraintsSchema;
 type networkAccess$schematype = typeof _networkAccessSchema;
@@ -352,6 +382,8 @@ export interface emailSendConstraintsSchema extends emailSendConstraints$schemat
 export interface emailTransportConstraintsSchema extends emailTransportConstraints$schematype {}
 export interface mainSchema extends main$schematype {}
 export interface mediaAccessSchema extends mediaAccess$schematype {}
+export interface mediaBytesReadConstraintsSchema extends mediaBytesReadConstraints$schematype {}
+export interface mediaMetadataWriteConstraintsSchema extends mediaMetadataWriteConstraints$schematype {}
 export interface mediaReadConstraintsSchema extends mediaReadConstraints$schematype {}
 export interface mediaWriteConstraintsSchema extends mediaWriteConstraints$schematype {}
 export interface networkAccessSchema extends networkAccess$schematype {}
@@ -380,6 +412,10 @@ export const emailTransportConstraintsSchema =
 	_emailTransportConstraintsSchema as emailTransportConstraintsSchema;
 export const mainSchema = _mainSchema as mainSchema;
 export const mediaAccessSchema = _mediaAccessSchema as mediaAccessSchema;
+export const mediaBytesReadConstraintsSchema =
+	_mediaBytesReadConstraintsSchema as mediaBytesReadConstraintsSchema;
+export const mediaMetadataWriteConstraintsSchema =
+	_mediaMetadataWriteConstraintsSchema as mediaMetadataWriteConstraintsSchema;
 export const mediaReadConstraintsSchema =
 	_mediaReadConstraintsSchema as mediaReadConstraintsSchema;
 export const mediaWriteConstraintsSchema =
@@ -423,6 +459,12 @@ export interface EmailTransportConstraints extends v.InferInput<
 > {}
 export interface Main extends v.InferInput<typeof mainSchema> {}
 export interface MediaAccess extends v.InferInput<typeof mediaAccessSchema> {}
+export interface MediaBytesReadConstraints extends v.InferInput<
+	typeof mediaBytesReadConstraintsSchema
+> {}
+export interface MediaMetadataWriteConstraints extends v.InferInput<
+	typeof mediaMetadataWriteConstraintsSchema
+> {}
 export interface MediaReadConstraints extends v.InferInput<
 	typeof mediaReadConstraintsSchema
 > {}
