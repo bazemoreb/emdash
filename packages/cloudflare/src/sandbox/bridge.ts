@@ -261,7 +261,7 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 	private observeSecretSetting(key: string, value: unknown): void {
 		const name = key.slice(SETTINGS_KEY_PREFIX.length);
 		if (this.ctx.props.settingsSchema?.[name]?.type === "secret" && typeof value === "string") {
-			this.secretRedactor.add(value);
+			this.secretRedactor.add(name, value);
 		}
 	}
 

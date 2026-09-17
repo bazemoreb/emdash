@@ -836,7 +836,7 @@ function observeSecretSetting(
 ): void {
 	const name = key.slice(SETTINGS_KEY_PREFIX.length);
 	if (settingsSchema[name]?.type === "secret" && typeof value === "string") {
-		secretRedactor?.add(value);
+		secretRedactor?.add(name, value);
 	}
 }
 

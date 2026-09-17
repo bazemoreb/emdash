@@ -39,15 +39,17 @@ export class PluginSettingEncryptionError extends Error {
 }
 
 export interface PluginSecretRedactor {
-	add(value: string): void;
+	add(key: string, value: string): void;
 	redact<T>(value: T): T;
 }
 
 export function createPluginSecretRedactor(): PluginSecretRedactor {
-	const secrets = new Set<string>();
+	const secretsByKey = new Map<string, [string, string?]>();
+	const secretValues = (): string[] =>
+		[...new Set([...secretsByKey.values()].flat())].toSorted((a, b) => b.length - a.length);
 	const redactString = (value: string): string => {
 		let redacted = value;
-		for (const secret of [...secrets].toSorted((a, b) => b.length - a.length)) {
+		for (const secret of secretValues()) {
 			redacted = redacted.replaceAll(secret, "[REDACTED]");
 		}
 		return redacted;
@@ -85,8 +87,13 @@ export function createPluginSecretRedactor(): PluginSecretRedactor {
 	};
 
 	return {
-		add(value) {
-			if (value.length > 0) secrets.add(value);
+		add(key, value) {
+			if (value.length === 0) {
+				secretsByKey.delete(key);
+				return;
+			}
+			const current = secretsByKey.get(key)?.[0];
+			secretsByKey.set(key, current && current !== value ? [value, current] : [value]);
 		},
 		redact<T>(value: T): T {
 			return redactValue(value, new WeakMap()) as T;
@@ -226,7 +233,7 @@ export async function encodePluginSettingValue(
 	value: unknown,
 	schema: Record<string, SettingField>,
 	keys?: ParsedEncryptionKey[] | null,
-	onSecret?: (value: string) => void,
+	onSecret?: (key: string, value: string) => void,
 ): Promise<unknown> {
 	if (!isSecretField(schema, key)) return value;
 	if (typeof value !== "string") {
@@ -235,7 +242,7 @@ export async function encodePluginSettingValue(
 			"Plugin secret settings must be strings",
 		);
 	}
-	onSecret?.(value);
+	onSecret?.(key, value);
 	return encryptPluginSetting(pluginId, key, value, keys);
 }
 
@@ -245,7 +252,7 @@ export async function decodePluginSettingValue<T = unknown>(
 	value: unknown,
 	schema: Record<string, SettingField>,
 	keys?: ParsedEncryptionKey[] | null,
-	onSecret?: (value: string) => void,
+	onSecret?: (key: string, value: string) => void,
 ): Promise<T> {
 	if (!isSecretField(schema, key)) {
 		if (isEncryptedPluginSetting(value)) {
@@ -257,7 +264,7 @@ export async function decodePluginSettingValue<T = unknown>(
 		return value as T;
 	}
 	if (typeof value === "string") {
-		onSecret?.(value);
+		onSecret?.(key, value);
 		return value as T;
 	}
 	if (!isEncryptedPluginSetting(value)) {
@@ -267,7 +274,7 @@ export async function decodePluginSettingValue<T = unknown>(
 		);
 	}
 	const decrypted = await decryptPluginSetting(pluginId, key, value, keys);
-	onSecret?.(decrypted);
+	onSecret?.(key, decrypted);
 	return decrypted as T;
 }
 
@@ -276,7 +283,7 @@ export function createSettingsAccess(
 	pluginId: string,
 	schema: Record<string, SettingField> = {},
 	keys?: ParsedEncryptionKey[] | null,
-	onSecret?: (value: string) => void,
+	onSecret?: (key: string, value: string) => void,
 ): SettingsAccess {
 	const prefix = `plugin:${pluginId}:settings:`;
 	const optionKey = (key: string) => {

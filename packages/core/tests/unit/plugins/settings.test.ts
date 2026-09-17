@@ -6,6 +6,7 @@ import { OptionsRepository } from "../../../src/database/repositories/options.js
 import type { Database } from "../../../src/database/types.js";
 import {
 	PluginSettingEncryptionError,
+	createPluginSecretRedactor,
 	createSettingsAccess,
 	decryptPluginSetting,
 	encryptPluginSetting,
@@ -133,5 +134,16 @@ describe("plugin settings encryption", () => {
 		await settings.set("enabled", true);
 		await expect(settings.get("enabled")).resolves.toBe(true);
 		await expect(repo.get(`plugin:${PLUGIN_ID}:settings:enabled`)).resolves.toBe(true);
+	});
+
+	it("bounds log-redaction history per declared setting", () => {
+		const redactor = createPluginSecretRedactor();
+		for (let index = 0; index < 100; index++) {
+			redactor.add("apiKey", `secret-${index}`);
+		}
+
+		expect(redactor.redact("secret-97 secret-98 secret-99")).toBe(
+			"secret-97 [REDACTED] [REDACTED]",
+		);
 	});
 });
