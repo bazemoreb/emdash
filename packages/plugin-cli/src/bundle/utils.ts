@@ -202,7 +202,7 @@ export function extractManifest(plugin: ResolvedPlugin): PluginManifest {
 		version: plugin.version,
 		declaredAccess,
 		capabilities: enforcedAccess.capabilities,
-		allowedHosts: enforcedAccess.allowedHosts,
+		allowedHosts: plugin.allowedHosts,
 		storage: plugin.storage,
 		hooks,
 		routes,

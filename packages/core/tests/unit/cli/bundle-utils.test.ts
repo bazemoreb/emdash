@@ -49,6 +49,14 @@ describe("extractManifest", () => {
 		});
 	});
 
+	it("preserves legacy allowed hosts without changing capability authority", () => {
+		const manifest = extractManifest(
+			mockPlugin({ capabilities: ["content:read"], allowedHosts: ["api.example.com"] }),
+		);
+		expect(manifest.capabilities).toEqual(["content:read"]);
+		expect(manifest.allowedHosts).toEqual(["api.example.com"]);
+	});
+
 	it("converts hooks from handler objects to name array", () => {
 		const plugin = mockPlugin({
 			hooks: {

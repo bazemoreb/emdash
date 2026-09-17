@@ -39,6 +39,14 @@ describe("extractManifest", () => {
 		});
 	});
 
+	it("preserves legacy allowed hosts without changing capability authority", () => {
+		const manifest = extractManifest(
+			minimalResolved({ capabilities: ["content:read"], allowedHosts: ["api.example.com"] }),
+		);
+		expect(manifest.capabilities).toEqual(["content:read"]);
+		expect(manifest.allowedHosts).toEqual(["api.example.com"]);
+	});
+
 	it("emits plain hook names when metadata is at defaults", () => {
 		const manifest = extractManifest(
 			minimalResolved({
