@@ -46,6 +46,12 @@ describe("080_redirect_write_guards migration", () => {
 			sql`INSERT INTO _emdash_redirects (id, source) VALUES ('legacy', '/old')`.execute(db),
 		).rejects.toThrow();
 		await expect(
+			sql`
+				INSERT INTO _emdash_redirects (id, source, destination, is_pattern)
+				VALUES ('legacy-pattern', '/old/[slug]', '/new/[slug]', 1)
+			`.execute(db),
+		).rejects.toThrow("pattern redirect writes require the current runtime");
+		await expect(
 			sql`INSERT INTO _emdash_redirects (id, source, config_revision, source_guard)
 				VALUES ('c', '/old', 'new', 1)`.execute(db),
 		).rejects.toThrow();

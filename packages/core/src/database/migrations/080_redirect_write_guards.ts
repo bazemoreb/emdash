@@ -72,27 +72,41 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 			LANGUAGE plpgsql
 			AS $$
 			BEGIN
+				PERFORM pg_advisory_xact_lock(1168624763);
 				IF TG_OP = 'INSERT' THEN
 					NEW.source_guard := 1;
-					IF NEW.write_generation <> 0 AND NEW.write_generation <>
-						(SELECT generation FROM _emdash_redirect_write_lock WHERE id = 1)
-					THEN
-						RAISE EXCEPTION 'redirect write lease expired';
-					END IF;
 				ELSIF NEW.source <> OLD.source THEN
 					NEW.source_guard := 1;
 				END IF;
+				IF NEW.write_generation <> 0 AND NOT EXISTS (
+					SELECT 1 FROM _emdash_redirect_write_lock
+					WHERE id = 1 AND token <> '' AND generation = NEW.write_generation
+				) THEN
+					RAISE EXCEPTION 'redirect write lease expired';
+				END IF;
+				-- Old binaries cannot hold this migration's lock across their
+				-- application-side pattern graph read, so mixed-version pattern
+				-- writes fail closed until every runtime is current.
+				IF NEW.write_generation = 0 AND (
+					NEW.is_pattern = 1 OR EXISTS (
+						SELECT 1 FROM _emdash_redirects
+						WHERE enabled = 1 AND is_pattern = 1
+							AND (TG_OP = 'INSERT' OR id <> NEW.id)
+					)
+				) THEN
+					RAISE EXCEPTION 'pattern redirect writes require the current runtime';
+				END IF;
 
-				IF NEW.enabled = 1 AND NEW.is_pattern = 0 AND NEW.destination <> '' AND EXISTS (
+				IF NEW.enabled = 1 AND NEW.destination <> '' AND EXISTS (
 					WITH RECURSIVE chain(source, destination) AS (
 						SELECT source, destination FROM _emdash_redirects
-						WHERE source = NEW.destination AND enabled = 1 AND is_pattern = 0
+						WHERE source = NEW.destination AND enabled = 1
 							AND (TG_OP = 'INSERT' OR id <> NEW.id)
 						UNION
 						SELECT redirect.source, redirect.destination
 						FROM _emdash_redirects AS redirect
 						JOIN chain ON redirect.source = chain.destination
-						WHERE redirect.enabled = 1 AND redirect.is_pattern = 0
+						WHERE redirect.enabled = 1
 							AND (TG_OP = 'INSERT' OR redirect.id <> NEW.id)
 					)
 					SELECT 1 FROM chain WHERE destination = NEW.source
@@ -108,34 +122,94 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 		);
 		await sql`
 			CREATE TRIGGER emdash_redirect_validate_write
-			BEFORE INSERT OR UPDATE OF source, destination, enabled, is_pattern, type
+			BEFORE INSERT OR UPDATE OF source, destination, enabled, is_pattern, type, group_name
 			ON _emdash_redirects
 			FOR EACH ROW EXECUTE FUNCTION emdash_redirect_validate_write()
+		`.execute(db);
+		await sql`
+			CREATE OR REPLACE FUNCTION emdash_redirect_serialize_delete()
+			RETURNS trigger
+			LANGUAGE plpgsql
+			AS $$
+			BEGIN
+				PERFORM pg_advisory_xact_lock(1168624763);
+				RETURN OLD;
+			END;
+			$$
+		`.execute(db);
+		await sql`DROP TRIGGER IF EXISTS emdash_redirect_serialize_delete ON _emdash_redirects`.execute(
+			db,
+		);
+		await sql`
+			CREATE TRIGGER emdash_redirect_serialize_delete
+			BEFORE DELETE ON _emdash_redirects
+			FOR EACH ROW EXECUTE FUNCTION emdash_redirect_serialize_delete()
 		`.execute(db);
 	} else {
 		await sql`
 			CREATE TRIGGER IF NOT EXISTS emdash_redirect_fence_insert
 			BEFORE INSERT ON _emdash_redirects
-			WHEN NEW.write_generation <> 0 AND NEW.write_generation <>
-				(SELECT generation FROM _emdash_redirect_write_lock WHERE id = 1)
+			WHEN NEW.write_generation <> 0 AND NOT EXISTS (
+				SELECT 1 FROM _emdash_redirect_write_lock
+				WHERE id = 1 AND token <> '' AND generation = NEW.write_generation
+			)
 			BEGIN
 				SELECT RAISE(ABORT, 'redirect write lease expired');
 			END
 		`.execute(db);
 		await sql`
+			CREATE TRIGGER IF NOT EXISTS emdash_redirect_fence_update
+			BEFORE UPDATE OF source, destination, enabled, is_pattern, type, group_name ON _emdash_redirects
+			WHEN NEW.write_generation <> 0 AND NOT EXISTS (
+				SELECT 1 FROM _emdash_redirect_write_lock
+				WHERE id = 1 AND token <> '' AND generation = NEW.write_generation
+			)
+			BEGIN
+				SELECT RAISE(ABORT, 'redirect write lease expired');
+			END
+		`.execute(db);
+		// An old binary validates patterns before its write statement and cannot
+		// hold this migration's cross-request lock across that read. Fail closed
+		// during a rolling deploy when a pattern participates in the graph.
+		await sql`
+			CREATE TRIGGER IF NOT EXISTS emdash_redirect_legacy_pattern_insert
+			BEFORE INSERT ON _emdash_redirects
+			WHEN NEW.write_generation = 0 AND (
+				NEW.is_pattern = 1 OR EXISTS (
+					SELECT 1 FROM _emdash_redirects WHERE enabled = 1 AND is_pattern = 1
+				)
+			)
+			BEGIN
+				SELECT RAISE(ABORT, 'pattern redirect writes require the current runtime');
+			END
+		`.execute(db);
+		await sql`
+			CREATE TRIGGER IF NOT EXISTS emdash_redirect_legacy_pattern_update
+			BEFORE UPDATE OF source, destination, enabled, is_pattern, type, group_name ON _emdash_redirects
+			WHEN NEW.write_generation = 0 AND (
+				NEW.is_pattern = 1 OR EXISTS (
+					SELECT 1 FROM _emdash_redirects
+					WHERE enabled = 1 AND is_pattern = 1 AND id <> NEW.id
+				)
+			)
+			BEGIN
+				SELECT RAISE(ABORT, 'pattern redirect writes require the current runtime');
+			END
+		`.execute(db);
+		await sql`
 			CREATE TRIGGER IF NOT EXISTS emdash_redirect_loop_insert
 			BEFORE INSERT ON _emdash_redirects
-			WHEN NEW.enabled = 1 AND NEW.is_pattern = 0 AND NEW.destination <> ''
+			WHEN NEW.enabled = 1 AND NEW.destination <> ''
 			BEGIN
 				SELECT CASE WHEN EXISTS (
 					WITH RECURSIVE chain(source, destination) AS (
 						SELECT source, destination FROM _emdash_redirects
-						WHERE source = NEW.destination AND enabled = 1 AND is_pattern = 0
+						WHERE source = NEW.destination AND enabled = 1
 						UNION
 						SELECT redirect.source, redirect.destination
 						FROM _emdash_redirects AS redirect
 						JOIN chain ON redirect.source = chain.destination
-						WHERE redirect.enabled = 1 AND redirect.is_pattern = 0
+						WHERE redirect.enabled = 1
 					)
 					SELECT 1 FROM chain WHERE destination = NEW.source
 				) THEN RAISE(ABORT, 'redirect loop') END;
@@ -143,18 +217,18 @@ export async function up(db: Kysely<unknown>): Promise<void> {
 		`.execute(db);
 		await sql`
 			CREATE TRIGGER IF NOT EXISTS emdash_redirect_loop_update
-			BEFORE UPDATE OF source, destination, enabled, is_pattern, type ON _emdash_redirects
-			WHEN NEW.enabled = 1 AND NEW.is_pattern = 0 AND NEW.destination <> ''
+			BEFORE UPDATE OF source, destination, enabled, is_pattern, type, group_name ON _emdash_redirects
+			WHEN NEW.enabled = 1 AND NEW.destination <> ''
 			BEGIN
 				SELECT CASE WHEN EXISTS (
 					WITH RECURSIVE chain(source, destination) AS (
 						SELECT source, destination FROM _emdash_redirects
-						WHERE source = NEW.destination AND enabled = 1 AND is_pattern = 0 AND id <> NEW.id
+						WHERE source = NEW.destination AND enabled = 1 AND id <> NEW.id
 						UNION
 						SELECT redirect.source, redirect.destination
 						FROM _emdash_redirects AS redirect
 						JOIN chain ON redirect.source = chain.destination
-						WHERE redirect.enabled = 1 AND redirect.is_pattern = 0 AND redirect.id <> NEW.id
+						WHERE redirect.enabled = 1 AND redirect.id <> NEW.id
 					)
 					SELECT 1 FROM chain WHERE destination = NEW.source
 				) THEN RAISE(ABORT, 'redirect loop') END;

@@ -1,4 +1,4 @@
-import type { Kysely } from "kysely";
+import { sql, type Kysely } from "kysely";
 import { afterEach, beforeEach, expect, it } from "vitest";
 
 import { RedirectRepository } from "../../../src/database/repositories/redirect.js";
@@ -96,5 +96,22 @@ describeEachDialect("plugin redirect optimistic concurrency", (dialect) => {
 				})),
 			),
 		).toEqual([]);
+	});
+
+	it("serializes legacy-shaped concurrent inserts after the schema expands", async () => {
+		const results = await Promise.allSettled([
+			sql`
+				INSERT INTO _emdash_redirects (id, source, destination)
+				VALUES ('legacy-a', '/legacy-a', '/legacy-b')
+			`.execute(db),
+			sql`
+				INSERT INTO _emdash_redirects (id, source, destination)
+				VALUES ('legacy-b', '/legacy-b', '/legacy-a')
+			`.execute(db),
+		]);
+		expect(results.filter((result) => result.status === "fulfilled")).toHaveLength(1);
+		expect(results.filter((result) => result.status === "rejected")).toHaveLength(1);
+		const redirects = await new RedirectRepository(db).findAllEnabled();
+		expect(detectLoops(redirects)).toEqual([]);
 	});
 });

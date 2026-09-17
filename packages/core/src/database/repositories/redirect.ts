@@ -8,7 +8,7 @@ import {
 	interpolateDestination,
 	isPattern,
 } from "../../redirects/patterns.js";
-import { currentTimestampValue } from "../dialect-helpers.js";
+import { currentTimestampValue, isPostgres } from "../dialect-helpers.js";
 import type { Database, RedirectTable } from "../types.js";
 import { encodeCursor, decodeCursor, type FindManyResult } from "./types.js";
 
@@ -117,6 +117,7 @@ export interface RedirectWriteFence {
 const REDIRECT_WRITE_LOCK_ID = 1;
 const REDIRECT_WRITE_LEASE_MS = 30_000;
 const REDIRECT_WRITE_LOCK_ATTEMPTS = 5;
+const POSTGRES_REDIRECT_LOCK_KEY = 1_168_624_763;
 
 // ---------------------------------------------------------------------------
 // Row mapping
@@ -144,7 +145,7 @@ function rowToRedirect(row: RedirectTable): Redirect {
 // ---------------------------------------------------------------------------
 
 export class RedirectRepository {
-	constructor(private db: Kysely<Database>) {}
+	constructor(readonly db: Kysely<Database>) {}
 
 	// --- CRUD ---------------------------------------------------------------
 
@@ -179,7 +180,22 @@ export class RedirectRepository {
 		return row?.config_revision ?? null;
 	}
 
-	async withWriteLock<T>(action: (fence: RedirectWriteFence) => Promise<T>): Promise<T> {
+	async withWriteLock<T>(
+		action: (fence: RedirectWriteFence, repository: RedirectRepository) => Promise<T>,
+	): Promise<T> {
+		if (isPostgres(this.db)) {
+			return this.db.transaction().execute(async (transaction) => {
+				await sql`SELECT pg_advisory_xact_lock(${POSTGRES_REDIRECT_LOCK_KEY})`.execute(transaction);
+				const repository = new RedirectRepository(transaction);
+				return repository.withLease(action);
+			});
+		}
+		return this.withLease(action);
+	}
+
+	private async withLease<T>(
+		action: (fence: RedirectWriteFence, repository: RedirectRepository) => Promise<T>,
+	): Promise<T> {
 		const token = ulid();
 		let fence: RedirectWriteFence | undefined;
 		for (let attempt = 0; attempt < REDIRECT_WRITE_LOCK_ATTEMPTS; attempt++) {
@@ -205,7 +221,7 @@ export class RedirectRepository {
 			throw new RedirectWriteBusyError("Another redirect change is in progress");
 		}
 		try {
-			return await action(fence);
+			return await action(fence, this);
 		} finally {
 			try {
 				await this.db
@@ -285,6 +301,11 @@ export class RedirectRepository {
 	}
 
 	async create(input: CreateRedirectInput, fence?: RedirectWriteFence): Promise<Redirect> {
+		if (!fence) {
+			return this.withWriteLock((currentFence, repository) =>
+				repository.create(input, currentFence),
+			);
+		}
 		const id = ulid();
 		const now = new Date().toISOString();
 		const patternFlag = input.isPattern ?? isPattern(input.source);
@@ -319,6 +340,11 @@ export class RedirectRepository {
 		expectedRevision?: string,
 		fence?: RedirectWriteFence,
 	): Promise<Redirect | null> {
+		if (!fence) {
+			return this.withWriteLock((currentFence, repository) =>
+				repository.update(id, input, expectedRevision, currentFence),
+			);
+		}
 		const existing = await this.findById(id);
 		if (!existing) return null;
 
@@ -326,6 +352,7 @@ export class RedirectRepository {
 			Math.max(Date.now(), new Date(existing.updatedAt).getTime() + 1),
 		).toISOString();
 		const values: Record<string, unknown> = { updated_at: now, config_revision: ulid() };
+		if (fence) values.write_generation = fence.generation;
 
 		if (input.source !== undefined) {
 			values.source = input.source;
@@ -368,6 +395,11 @@ export class RedirectRepository {
 		expectedRevision?: string,
 		fence?: RedirectWriteFence,
 	): Promise<boolean> {
+		if (!fence) {
+			return this.withWriteLock((currentFence, repository) =>
+				repository.delete(id, expectedRevision, currentFence),
+			);
+		}
 		let query = this.db.deleteFrom("_emdash_redirects").where("id", "=", id);
 		if (expectedRevision !== undefined) {
 			query = query.where("config_revision", "=", expectedRevision);
@@ -480,7 +512,7 @@ export class RedirectRepository {
 		oldPublishedAt?: string | null,
 		newPublishedAt?: string | null,
 	): Promise<Redirect | null> {
-		return this.withWriteLock(async (fence) => {
+		return this.withWriteLock(async (fence, repository) => {
 			const oldUrl = interpolateUrlPattern({
 				pattern: urlPattern,
 				collection,
@@ -500,12 +532,12 @@ export class RedirectRepository {
 			if (oldUrl === newUrl) return null;
 
 			// Collapse chains: update any existing redirects pointing to the old URL
-			await this.collapseChains(oldUrl, newUrl, fence);
+			await repository.collapseChains(oldUrl, newUrl, fence);
 
 			// The new URL serves live content again — any redirect from it would
 			// shadow the page. This also removes the self-redirect that chain
 			// collapsing produces when a rename A → B is reverted (A → A).
-			await this.db
+			await repository.db
 				.deleteFrom("_emdash_redirects")
 				.where("source", "=", newUrl)
 				.where((eb) =>
@@ -521,13 +553,13 @@ export class RedirectRepository {
 				.execute();
 
 			// Check if a redirect from this source already exists
-			const existing = await this.findBySource(oldUrl);
+			const existing = await repository.findBySource(oldUrl);
 			if (existing) {
 				// Update the existing redirect to point to the new URL
-				return (await this.update(existing.id, { destination: newUrl }, undefined, fence))!;
+				return (await repository.update(existing.id, { destination: newUrl }, undefined, fence))!;
 			}
 
-			return this.create(
+			return repository.create(
 				{
 					source: oldUrl,
 					destination: newUrl,
@@ -551,12 +583,18 @@ export class RedirectRepository {
 		newDestination: string,
 		fence?: RedirectWriteFence,
 	): Promise<number> {
+		if (!fence) {
+			return this.withWriteLock((currentFence, repository) =>
+				repository.collapseChains(oldDestination, newDestination, currentFence),
+			);
+		}
 		let query = this.db
 			.updateTable("_emdash_redirects")
 			.set({
 				destination: newDestination,
 				updated_at: new Date().toISOString(),
 				config_revision: ulid(),
+				...(fence ? { write_generation: fence.generation } : {}),
 			})
 			.where("destination", "=", oldDestination);
 		if (fence) {
