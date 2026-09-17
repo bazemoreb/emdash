@@ -44,4 +44,11 @@ describe("PluginBridge media capability separation", () => {
 		await expect(bridge.mediaGet("media-1")).rejects.toThrow("Missing capability: media:read");
 		await expect(bridge.mediaList()).rejects.toThrow("Missing capability: media:read");
 	});
+
+	it("matches workerd validation for a non-number byte limit", async () => {
+		const bridge = makeBridge(["media:bytes:read"]);
+		await expect(bridge.mediaReadBytes("media-1", "ten" as never)).rejects.toThrow(
+			new TypeError("media/readBytes: maxBytes must be a number"),
+		);
+	});
 });

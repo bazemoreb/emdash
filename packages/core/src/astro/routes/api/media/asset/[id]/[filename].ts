@@ -3,7 +3,6 @@ import type { APIRoute } from "astro";
 import { requirePerm } from "#api/authorize.js";
 import { apiError, handleError } from "#api/error.js";
 import { MediaRepository } from "#db/repositories/media.js";
-import { IMMUTABLE_IMAGE_CACHE, MUTABLE_MEDIA_CACHE_CONTROL } from "#media/image-endpoint.js";
 
 export const prerender = false;
 
@@ -37,9 +36,7 @@ export const GET: APIRoute = async ({ params, locals }) => {
 		const result = await emdash.storage.download(item.storageKey);
 		const headers: Record<string, string> = {
 			"Content-Type": result.contentType,
-			"Cache-Control": result.contentType.startsWith("image/")
-				? MUTABLE_MEDIA_CACHE_CONTROL
-				: IMMUTABLE_IMAGE_CACHE,
+			"Cache-Control": "private, max-age=0, must-revalidate",
 			"X-Content-Type-Options": "nosniff",
 			"Content-Security-Policy":
 				"sandbox; default-src 'none'; img-src 'self'; style-src 'unsafe-inline'",

@@ -54,6 +54,7 @@ describe("opaque media asset route", () => {
 			locals: { emdash: { db, storage }, user: { id: "reader", role: 10 } },
 		} as Parameters<typeof GET>[0]);
 		expect(response.status).toBe(200);
+		expect(response.headers.get("Cache-Control")).toBe("private, max-age=0, must-revalidate");
 		expect(response.headers.get("Content-Disposition")).toBe("attachment");
 		expect(new Uint8Array(await response.arrayBuffer())).toEqual(bytes);
 	});

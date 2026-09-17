@@ -926,6 +926,9 @@ export class PluginBridge extends WorkerEntrypoint<PluginBridgeEnv, PluginBridge
 		if (!capabilities.includes("media:bytes:read")) {
 			throw new Error("Missing capability: media:bytes:read");
 		}
+		if (maxBytes !== undefined && typeof maxBytes !== "number") {
+			throw new TypeError("media/readBytes: maxBytes must be a number");
+		}
 		const db = new Kysely<Database>({ dialect: new D1Dialect({ database: this.env.DB }) });
 		return readPluginMediaBytes(db, mediaStorageCallback ?? undefined, id, { maxBytes });
 	}
