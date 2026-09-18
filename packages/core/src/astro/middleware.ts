@@ -57,10 +57,7 @@ import {
 } from "../emdash-runtime.js";
 import { setI18nConfig } from "../i18n/config.js";
 import type { Database, Storage } from "../index.js";
-import {
-	createPublicMediaFilenameResolver,
-	createPublicMediaUrlResolver,
-} from "../media/url.js";
+import { createPublicMediaFilenameResolver, createPublicMediaUrlResolver } from "../media/url.js";
 import { getLastContentWriteAt } from "../object-cache/index.js";
 import type { SandboxRunnerFactory } from "../plugins/sandbox/types.js";
 import type { ResolvedPlugin } from "../plugins/types.js";
