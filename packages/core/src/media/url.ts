@@ -70,12 +70,15 @@ export function createPublicMediaUrlResolver(
  * @internal
  */
 export function createPublicMediaFilenameResolver(
-	db: Kysely<Database>,
+	getDb: () => Kysely<Database>,
 ): (storageKey: string) => Promise<string | null> {
 	return async (storageKey) => {
 		if (!storageKey) return null;
 		try {
-			return await new MediaRepository(db).findFilenameByStorageKey(storageKey);
+			// Read the db per call, not at construction: the resolver is built before
+			// the per-request scoped db is installed, and a captured request-bound
+			// connection (pg/Hyperdrive) hangs when reused from a later request.
+			return await new MediaRepository(getDb()).findFilenameByStorageKey(storageKey);
 		} catch {
 			return null;
 		}

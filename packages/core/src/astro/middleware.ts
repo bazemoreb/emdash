@@ -903,7 +903,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 							collectPageMetadata: runtime.collectPageMetadata.bind(runtime),
 							collectPageFragments: runtime.collectPageFragments.bind(runtime),
 							getPublicMediaUrl: createPublicMediaUrlResolver(runtime.storage),
-							getPublicMediaFilename: createPublicMediaFilenameResolver(runtime.db),
+							getPublicMediaFilename: createPublicMediaFilenameResolver(() => runtime.db),
 							storage: runtime.storage,
 						} as EmDashHandlers;
 					} catch (error) {
@@ -1134,7 +1134,7 @@ export const onRequest = defineMiddleware(async (context, next) => {
 						return runtime.db;
 					},
 					getPublicMediaUrl: createPublicMediaUrlResolver(runtime.storage),
-					getPublicMediaFilename: createPublicMediaFilenameResolver(runtime.db),
+					getPublicMediaFilename: createPublicMediaFilenameResolver(() => runtime.db),
 					hooks: runtime.hooks,
 					email: runtime.email,
 					configuredPlugins: runtime.configuredPlugins,
