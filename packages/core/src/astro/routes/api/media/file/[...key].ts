@@ -7,6 +7,7 @@
 import type { APIRoute } from "astro";
 
 import { apiError, handleError } from "#api/error.js";
+import { MediaRepository } from "#db/repositories/media.js";
 import { contentDisposition } from "#media/content-disposition.js";
 import {
 	IMMUTABLE_IMAGE_CACHE,
@@ -139,8 +140,16 @@ export const GET: APIRoute = async ({ params, locals, request, cache }) => {
 		// browser falls back to the last path segment of the URL -- the storage
 		// key -- and every downloaded document is named after its ULID.
 		// Skipped for inline types, where no filename is shown to anyone.
-		const filename =
-			disposition === "attachment" ? ((await emdash.getPublicMediaFilename?.(key)) ?? null) : null;
+		let filename: string | null = null;
+		if (disposition === "attachment") {
+			// A failed lookup must not fail the download: naming the file is a
+			// nicety, and media with no row is served under the bare disposition.
+			try {
+				filename = await new MediaRepository(emdash.db).findFilenameByStorageKey(key);
+			} catch {
+				filename = null;
+			}
+		}
 		headers["Content-Disposition"] = contentDisposition(disposition, filename);
 
 		if (served) {

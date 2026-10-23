@@ -44,6 +44,12 @@ describe("contentDisposition", () => {
 		expect(value).toContain("filename*=UTF-8''%E6%97%A5%E6%9C%AC%E8%AA%9E.pdf");
 	});
 
+	it("percent-encodes the characters encodeURIComponent leaves alone", () => {
+		expect(contentDisposition("attachment", "L'été (1)*.pdf")).toBe(
+			`attachment; filename="L'ete (1)-.pdf"; filename*=UTF-8''L%27%C3%A9t%C3%A9%20%281%29%2A.pdf`,
+		);
+	});
+
 	it("does not let a filename inject extra header parameters", () => {
 		const value = contentDisposition("attachment", 'x"; filename="evil.exe');
 		expect(value).toBe(

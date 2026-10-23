@@ -45,6 +45,12 @@ export function contentDisposition(
 ): string {
 	if (!filename) return disposition;
 	const ascii = toAsciiFilename(filename);
-	const encoded = encodeURIComponent(filename);
+	// encodeURIComponent leaves ' ( ) * unescaped, but RFC 5987 attr-char does
+	// not allow them; a strict client would discard filename* and fall back to
+	// the ASCII name. Percent-encode them too.
+	const encoded = encodeURIComponent(filename).replace(
+		/['()*]/g,
+		(c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+	);
 	return `${disposition}; filename="${ascii}"; filename*=UTF-8''${encoded}`;
 }
